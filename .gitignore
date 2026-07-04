@@ -1,0 +1,32 @@
+# CMake and Build artifacts
+build/
+out/
+bin/
+*.cmake
+CMakeCache.txt
+CMakeFiles/
+
+# Visual Studio & Windows specific files
+.vs/
+*.user
+*.suo
+*.db
+*.sln
+*.vcxproj
+*.vcxproj.filters
+Thumbs.db
+
+# JUCE specific (if generated outside the build folder)
+JuceLibraryCode/
+
+# macOS specific (just in case you port this to a Mac later)
+.DS_Store
+*.app/
+*.dmg
+
+# Compiled audio plugins
+*.vst3
+*.dll
+*.exe
+*.aaxplugin
+*.component
