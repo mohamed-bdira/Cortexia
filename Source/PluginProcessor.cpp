@@ -2,88 +2,69 @@
 #include "PluginEditor.h"
 
 CortexiaAudioProcessor::CortexiaAudioProcessor()
+#ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
-                     .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                     .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
+                        #if ! JucePlugin_IsMidiEffect
+                         #if ! JucePlugin_IsSynth
+                          .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                         #endif
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                        #endif
+                       )
+#endif
 {
+    // Add 16 polyphonic voices
+    for (int i = 0; i < 16; ++i)
+        synth.addVoice (new SynthVoice());
+
+    synth.addSound (new SynthSound());
 }
 
 CortexiaAudioProcessor::~CortexiaAudioProcessor() {}
 
-const juce::String CortexiaAudioProcessor::getName() const { return JucePlugin_Name; }
+void CortexiaAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    synth.setCurrentPlaybackSampleRate (sampleRate);
 
-void CortexiaAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock) {}
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
+            voice->prepareToPlay (sampleRate, samplesPerBlock);
+    }
+}
 
 void CortexiaAudioProcessor::releaseResources() {}
+
+bool CortexiaAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+
+    return true;
+}
 
 void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
+    buffer.clear();
 
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
-
-#if JucePlugin_IsSynth
-    
-    auto sampleRate = getSampleRate();
-
-    // 1. PROCESS MIDI MESSAGES
-    for (const auto metadata : midiMessages)
+    // Push latest UI parameters to active voices
+    for (int i = 0; i < synth.getNumVoices(); ++i)
     {
-        auto message = metadata.getMessage();
-        
-        if (message.isNoteOn()) // <--- Fixed typo here
-        {
-            // Fixed typo on "Hertz" here
-            double frequency = juce::MidiMessage::getMidiNoteInHertz (message.getNoteNumber());
-            phaseDelta = frequency / sampleRate;
-            noteIsOn = true;
-        }
-        else if (message.isNoteOff())
-        {
-            noteIsOn = false;
-        }
+        if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
+            voice->updateParameters (currentWaveType, adsrParams, synthGain);
     }
 
-    // 2. GENERATE AUDIO (SAWTOOTH WAVE)
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample) // <--- Fixed "samples" typo here
-    {
-        float currentSampleValue = 0.0f;
-
-        if (noteIsOn)
-        {
-            currentSampleValue = (float)(currentPhase * 2.0 - 1.0) * 0.1f;
-
-            currentPhase += phaseDelta;
-            if (currentPhase >= 1.0)
-                currentPhase -= 1.0;
-        }
-        else
-        {
-            currentPhase = 0.0; 
-        }
-
-        for (int channel = 0; channel < totalNumOutputChannels; ++channel)
-        {
-            buffer.getWritePointer(channel)[sample] = currentSampleValue;
-        }
-    }
-
-#else
-
-    // EFFECT LOGIC: Pass-through mode
-    
-#endif
+    synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
 }
 
-bool CortexiaAudioProcessor::hasEditor() const { return true; }
-
-juce::AudioProcessorEditor* CortexiaAudioProcessor::createEditor(){
+juce::AudioProcessorEditor* CortexiaAudioProcessor::createEditor()
+{
     return new CortexiaAudioProcessorEditor (*this);
 }
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
     return new CortexiaAudioProcessor();
 }
