@@ -4,107 +4,70 @@
 #include "PluginProcessor.h"
 
 // ==============================================================================
-// CUSTOM LOOK AND FEEL (MODERN KNOBS & MENUS)
-class CustomLookAndFeel : public juce::LookAndFeel_V4
+// CUSTOM MODERN LOOK & FEEL
+// ==============================================================================
+class ModernLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    CustomLookAndFeel()
+    ModernLookAndFeel()
     {
-        // ComboBox Colors
-        setColour (juce::ComboBox::backgroundColourId,             juce::Colour (0xff0a192f));
-        setColour (juce::ComboBox::outlineColourId,                juce::Colour (0xff38bdf8));
-        setColour (juce::ComboBox::arrowColourId,                  juce::Colour (0xff38bdf8));
-        setColour (juce::ComboBox::textColourId,                   juce::Colour (0xffe0f2fe));
-        
-        // PopupMenu Colors
-        setColour (juce::PopupMenu::backgroundColourId,            juce::Colour (0xff0a192f));
-        setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff38bdf8));
-        setColour (juce::PopupMenu::highlightedTextColourId,       juce::Colour (0xff0a192f));
-        setColour (juce::PopupMenu::textColourId,                  juce::Colour (0xffe0f2fe));
+        setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffe2e8f0));
+        setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff171a1f));
+        setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff2d333b));
+        setColour (juce::ComboBox::textColourId, juce::Colour (0xffe2e8f0));
+        setColour (juce::ComboBox::arrowColourId, juce::Colour (0xff8892b0));
+        setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff171a1f));
+        setColour (juce::PopupMenu::textColourId, juce::Colour (0xffe2e8f0));
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff38bdf8).withAlpha(0.2f));
     }
 
-    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
-                           const float rotaryStartAngle, const float rotaryEndAngle, juce::Slider& slider) override
+    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPos, const float rotaryStartAngle,
+                           const float rotaryEndAngle, juce::Slider& slider) override
     {
-        auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
-        auto centreX = (float) x + (float) width  * 0.5f;
-        auto centreY = (float) y + (float) height * 0.5f;
-        auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-        
-        // 1. Draw Background Track
-        g.setColour (juce::Colour (0xff0a192f));
+        auto bounds = juce::Rectangle<float> (x, y, width, height).reduced (4.0f);
+        auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
+        auto toAngle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+        auto lineW = 4.0f;
+        auto arcRadius = radius - lineW * 0.5f;
+
+        // Draw Background Track
         juce::Path backgroundArc;
-        backgroundArc.addCentredArc (centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.strokePath (backgroundArc, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        
-        // 2. Draw Active Fill Track
+        backgroundArc.addCentredArc (bounds.getCentreX(), bounds.getCentreY(),
+                                     arcRadius, arcRadius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour (juce::Colour (0xff2d333b));
+        g.strokePath (backgroundArc, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Draw Value Arc (Dynamic Color)
+        auto fillColour = slider.findColour (juce::Slider::rotarySliderFillColourId);
         if (slider.isEnabled())
         {
-            g.setColour (juce::Colour (0xff38bdf8));
-            juce::Path fillArc;
-            fillArc.addCentredArc (centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
-            g.strokePath (fillArc, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            juce::Path valueArc;
+            valueArc.addCentredArc (bounds.getCentreX(), bounds.getCentreY(),
+                                    arcRadius, arcRadius, 0.0f, rotaryStartAngle, toAngle, true);
+            g.setColour (fillColour);
+            g.strokePath (valueArc, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
-        
-        // 3. Draw Thumb/Pointer
+
+        // Draw Inner Knob Body
+        g.setColour (juce::Colour (0xff171a1f));
+        g.fillEllipse (bounds.getCentreX() - arcRadius + lineW, bounds.getCentreY() - arcRadius + lineW,
+                       (arcRadius - lineW) * 2.0f, (arcRadius - lineW) * 2.0f);
+
+        // Draw Pointer/Indicator
         juce::Path pointer;
-        auto pointerLength = radius * 0.4f;
-        auto pointerThickness = 3.0f;
-        pointer.addRoundedRectangle (-pointerThickness * 0.5f, -radius, pointerThickness, pointerLength, 1.5f);
-        pointer.applyTransform (juce::AffineTransform::rotation (angle).translated (centreX, centreY));
-        g.setColour (juce::Colour (0xffffffff));
+        auto pointerLength = radius * 0.6f;
+        auto pointerThickness = 2.5f;
+        pointer.addRectangle (-pointerThickness * 0.5f, -radius + lineW + 3.0f, pointerThickness, pointerLength);
+        pointer.applyTransform (juce::AffineTransform::rotation (toAngle).translated (bounds.getCentreX(), bounds.getCentreY()));
+        g.setColour (juce::Colour (0xffe2e8f0));
         g.fillPath (pointer);
     }
 };
 
 // ==============================================================================
-// OSCILLOSCOPE COMPONENT
-class OscilloscopeComponent : public juce::Component, public juce::Timer
-{
-public:
-    OscilloscopeComponent (CortexiaAudioProcessor& p) : audioProcessor (p) 
-    { 
-        startTimerHz (30); 
-    }
-
-    void timerCallback() override
-    {
-        if (audioProcessor.nextFrameReady)
-        {
-            audioProcessor.nextFrameReady = false;
-            repaint();
-        }
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        g.setColour (juce::Colour (0x40000000));
-        g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
-
-        g.setColour (juce::Colour (0xff38bdf8)); 
-        
-        auto width = getWidth();
-        auto height = getHeight();
-        juce::Path wavePath;
-
-        for (size_t i = 0; i < audioProcessor.scopeData.size(); ++i)
-        {
-            auto x = juce::jmap (float (i), 0.0f, float (audioProcessor.scopeData.size() - 1), 0.0f, float (width));
-            auto y = juce::jmap (audioProcessor.scopeData[i], -1.0f, 1.0f, float (height), 0.0f);
-
-            if (i == 0)
-                wavePath.startNewSubPath (x, y);
-            else
-                wavePath.lineTo (x, y);
-        }
-
-        g.strokePath (wavePath, juce::PathStrokeType (2.0f));
-    }
-
-private:
-    CortexiaAudioProcessor& audioProcessor;
-};
-
+// PLUGIN EDITOR CLASS
 // ==============================================================================
 class CortexiaAudioProcessorEditor  : public juce::AudioProcessorEditor
 {
@@ -116,48 +79,43 @@ public:
     void resized() override;
 
 private:
-    void setupKnob (juce::Slider& slider, juce::Label& label, const juce::String& text);
+    void setupKnob (juce::Slider& slider, juce::Label& label, const juce::String& text, juce::Colour accentColour);
 
     CortexiaAudioProcessor& audioProcessor;
-    CustomLookAndFeel customLookAndFeel;
+    ModernLookAndFeel customLookAndFeel; // Applied our new modern look
 
-    // OSCILLATOR
-    juce::ComboBox waveSelector;
-    juce::Label waveLabel;
-    juce::Slider volumeSlider;
-    juce::Label volumeLabel;
+    // OSCILLATOR 1
+    juce::ComboBox waveSelector1;
+    juce::Label waveLabel1;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveAttachment1;
+    juce::Slider volumeSlider1; juce::Label volumeLabel1; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> volumeAttachment1;
+    juce::Slider tuneSlider1;   juce::Label tuneLabel1;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> tuneAttachment1;
+    juce::Slider detuneSlider1; juce::Label detuneLabel1; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAttachment1;
+
+    // OSCILLATOR 2
+    juce::ComboBox waveSelector2;
+    juce::Label waveLabel2;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveAttachment2;
+    juce::Slider volumeSlider2; juce::Label volumeLabel2; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> volumeAttachment2;
+    juce::Slider tuneSlider2;   juce::Label tuneLabel2;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> tuneAttachment2;
+    juce::Slider detuneSlider2; juce::Label detuneLabel2; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAttachment2;
 
     // FILTER
-    juce::Slider cutoffSlider;
-    juce::Label cutoffLabel;
-    juce::Slider resonanceSlider;
-    juce::Label resonanceLabel;
+    juce::Slider cutoffSlider;    juce::Label cutoffLabel;    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
+    juce::Slider resonanceSlider; juce::Label resonanceLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
+
+    // LFO
+    juce::Slider lfoRateSlider;   juce::Label lfoRateLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoRateAttachment;
+    juce::Slider lfoDepthSlider;  juce::Label lfoDepthLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
 
     // ENVELOPE
-    juce::Slider attackSlider;
-    juce::Label attackLabel;
-    juce::Slider decaySlider;
-    juce::Label decayLabel;
-    juce::Slider sustainSlider;
-    juce::Label sustainLabel;
-    juce::Slider releaseSlider;
-    juce::Label releaseLabel;
+    juce::Slider attackSlider;  juce::Label attackLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
+    juce::Slider decaySlider;   juce::Label decayLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
+    juce::Slider sustainSlider; juce::Label sustainLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;
+    juce::Slider releaseSlider; juce::Label releaseLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
 
-    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-
-    std::unique_ptr<ComboBoxAttachment> waveAttachment;
-    std::unique_ptr<SliderAttachment> volumeAttachment;
-
-    std::unique_ptr<SliderAttachment> cutoffAttachment;
-    std::unique_ptr<SliderAttachment> resonanceAttachment;
-
-    std::unique_ptr<SliderAttachment> attackAttachment;
-    std::unique_ptr<SliderAttachment> decayAttachment;
-    std::unique_ptr<SliderAttachment> sustainAttachment;
-    std::unique_ptr<SliderAttachment> releaseAttachment;
-
-    OscilloscopeComponent oscilloscope { audioProcessor };
+    // OSCILLOSCOPE
+    juce::AudioVisualiserComponent oscilloscope { 2 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CortexiaAudioProcessorEditor)
 };
