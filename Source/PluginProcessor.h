@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
 
 // 1. WAVEFORM SELECTION ENUM
 enum class WaveType { Sine = 0, Saw, Square, Triangle };
@@ -12,7 +13,30 @@ struct SynthSound : public juce::SynthesiserSound
     bool appliesToChannel (int) override { return true; }
 };
 
-// 3. TPT STATE VARIABLE FILTER DEFINITION
+// 3. LFO GENERATOR
+struct LFO
+{
+    double currentPhase = 0.0;
+    double phaseIncrement = 0.0;
+    double sampleRate = 44100.0;
+
+    void setParameters (float frequency, double sr)
+    {
+        sampleRate = sr;
+        phaseIncrement = (frequency / sampleRate) * juce::MathConstants<double>::twoPi;
+    }
+
+    float getNextSample()
+    {
+        currentPhase += phaseIncrement;
+        if (currentPhase >= juce::MathConstants<double>::twoPi)
+            currentPhase -= juce::MathConstants<double>::twoPi;
+
+        return (float) std::sin (currentPhase);
+    }
+};
+
+// 4. TPT STATE VARIABLE FILTER DEFINITION
 struct StateVariableFilter
 {
     float g = 0.0f;
@@ -22,8 +46,7 @@ struct StateVariableFilter
 
     void setParams (float cutoffHz, float Q, double sampleRate)
     {
-        if (sampleRate <= 0.0)
-            return;
+        if (sampleRate <= 0.0) return;
 
         float maxCutoff = (float) (sampleRate * 0.49);
         float safeCutoff = juce::jlimit (20.0f, maxCutoff, cutoffHz);
@@ -33,15 +56,10 @@ struct StateVariableFilter
         k = 1.0f / safeQ;
     }
 
-    void reset()
-    {
-        s1 = 0.0f;
-        s2 = 0.0f;
-    }
+    void reset() { s1 = 0.0f; s2 = 0.0f; }
 
     float processLowPass (float input)
     {
-        // THE MATH IS FIXED HERE: Removed the rogue 2.0f multiplier
         float hp = (input - (g + k) * s1 - s2) / (1.0f + g * (g + k));
         float bp = g * hp + s1;
         s1 = g * hp + bp;
@@ -51,21 +69,19 @@ struct StateVariableFilter
     }
 };
 
-// 4. POLYPHONIC VOICE DEFINITION
+// 5. POLYPHONIC VOICE DEFINITION
 class SynthVoice : public juce::SynthesiserVoice
 {
 public:
     SynthVoice() {}
 
-    bool canPlaySound (juce::SynthesiserSound* sound) override
-    {
-        return dynamic_cast<SynthSound*> (sound) != nullptr;
-    }
+    bool canPlaySound (juce::SynthesiserSound* sound) override { return dynamic_cast<SynthSound*> (sound) != nullptr; }
 
     void startNote (int midiNoteNumber, float velocity, juce::SynthesiserSound*, int) override
     {
         currentPitch = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
-        phase = 0.0;
+        phase1 = 0.0;
+        phase2 = 0.0;
         noteVelocity = velocity;
         filter.reset();
         adsr.noteOn();
@@ -74,8 +90,7 @@ public:
     void stopNote (float, bool allowTailOff) override
     {
         adsr.noteOff();
-        if (! allowTailOff || ! adsr.isActive())
-            clearCurrentNote();
+        if (! allowTailOff || ! adsr.isActive()) clearCurrentNote();
     }
 
     void pitchWheelMoved (int) override {}
@@ -88,51 +103,78 @@ public:
         filter.reset();
     }
 
-    void updateParameters (WaveType wave, const juce::ADSR::Parameters& params, float gain, float cutoff, float resonance)
+    void updateParameters (WaveType wave1, float gain1, float tune1, float detune1,
+                           WaveType wave2, float gain2, float tune2, float detune2,
+                           const juce::ADSR::Parameters& params, float cutoff, 
+                           float resonance, float lfoRate, float lfoDepth)
     {
-        currentWave = wave;
+        currentWave1 = wave1;
+        masterGain1 = gain1;
+        osc1Tune = tune1;
+        osc1Detune = detune1;
+        
+        currentWave2 = wave2;
+        masterGain2 = gain2;
+        osc2Tune = tune2;
+        osc2Detune = detune2;
+
         adsr.setParameters (params);
-        masterGain = gain;
-        filter.setParams (cutoff, resonance, currentSampleRate);
+        baseCutoff = cutoff;
+        filterResonance = resonance;
+        filterLFO.setParameters (lfoRate, currentSampleRate);
+        modDepth = lfoDepth;
     }
 
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override
     {
-        if (! isVoiceActive())
-            return;
+        if (! isVoiceActive()) return;
 
         while (--numSamples >= 0)
         {
-            if (currentSampleRate <= 0.0)
-                break;
+            if (currentSampleRate <= 0.0) break;
 
-            double phaseIncrement = (currentPitch / currentSampleRate) * juce::MathConstants<double>::twoPi;
-            phase += phaseIncrement;
-            if (phase >= juce::MathConstants<double>::twoPi)
-                phase -= juce::MathConstants<double>::twoPi;
+            // OSC 1 PITCH & PHASE (Now with Tune/Detune)
+            double pitch1 = currentPitch * std::pow (2.0, (osc1Tune + (osc1Detune / 100.0)) / 12.0);
+            double phaseInc1 = (pitch1 / currentSampleRate) * juce::MathConstants<double>::twoPi;
+            phase1 += phaseInc1;
+            if (phase1 >= juce::MathConstants<double>::twoPi) phase1 -= juce::MathConstants<double>::twoPi;
 
-            float sample = 0.0f;
+            // OSC 2 PITCH & PHASE
+            double pitch2 = currentPitch * std::pow (2.0, (osc2Tune + (osc2Detune / 100.0)) / 12.0);
+            double phaseInc2 = (pitch2 / currentSampleRate) * juce::MathConstants<double>::twoPi;
+            phase2 += phaseInc2;
+            if (phase2 >= juce::MathConstants<double>::twoPi) phase2 -= juce::MathConstants<double>::twoPi;
 
-            switch (currentWave)
+            // GENERATE OSC 1
+            float sample1 = 0.0f;
+            switch (currentWave1)
             {
-                case WaveType::Sine:
-                    sample = (float) std::sin (phase);
-                    break;
-                case WaveType::Saw:
-                    sample = (float) (1.0 - (phase / juce::MathConstants<double>::pi));
-                    break;
-                case WaveType::Square:
-                    sample = (phase < juce::MathConstants<double>::pi) ? 1.0f : -1.0f;
-                    break;
-                case WaveType::Triangle:
-                    sample = (float) (2.0 * std::abs (2.0 * (phase / juce::MathConstants<double>::twoPi) - 1.0) - 1.0);
-                    break;
+                case WaveType::Sine:     sample1 = (float) std::sin (phase1); break;
+                case WaveType::Saw:      sample1 = (float) (1.0 - (phase1 / juce::MathConstants<double>::pi)); break;
+                case WaveType::Square:   sample1 = (phase1 < juce::MathConstants<double>::pi) ? 1.0f : -1.0f; break;
+                case WaveType::Triangle: sample1 = (float) (2.0 * std::abs (2.0 * (phase1 / juce::MathConstants<double>::twoPi) - 1.0) - 1.0); break;
             }
 
+            // GENERATE OSC 2
+            float sample2 = 0.0f;
+            switch (currentWave2)
+            {
+                case WaveType::Sine:     sample2 = (float) std::sin (phase2); break;
+                case WaveType::Saw:      sample2 = (float) (1.0 - (phase2 / juce::MathConstants<double>::pi)); break;
+                case WaveType::Square:   sample2 = (phase2 < juce::MathConstants<double>::pi) ? 1.0f : -1.0f; break;
+                case WaveType::Triangle: sample2 = (float) (2.0 * std::abs (2.0 * (phase2 / juce::MathConstants<double>::twoPi) - 1.0) - 1.0); break;
+            }
+
+            // MIX OSCILLATORS AND APPLY ENVELOPE
             float adsrValue = adsr.getNextSample();
-            float rawSample = sample * noteVelocity * masterGain * adsrValue;
+            float mixedSample = ((sample1 * masterGain1) + (sample2 * masterGain2)) * noteVelocity * adsrValue;
             
-            float finalSample = filter.processLowPass (rawSample);
+            // FILTER MODULATION
+            float lfoVal = filterLFO.getNextSample();
+            float modulatedCutoff = baseCutoff + (lfoVal * modDepth * baseCutoff);
+            filter.setParams (modulatedCutoff, filterResonance, currentSampleRate);
+            
+            float finalSample = filter.processLowPass (mixedSample);
 
             for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
                 outputBuffer.addSample (channel, startSample, finalSample);
@@ -150,12 +192,30 @@ public:
 private:
     juce::ADSR adsr;
     StateVariableFilter filter;
+    LFO filterLFO;
+    
     double currentSampleRate = 44100.0;
     double currentPitch = 440.0;
-    double phase = 0.0;
     float noteVelocity = 0.0f;
-    float masterGain = 0.2f;
-    WaveType currentWave = WaveType::Saw;
+
+    // OSC 1 Variables
+    double phase1 = 0.0;
+    float masterGain1 = 0.2f;
+    WaveType currentWave1 = WaveType::Saw;
+    float osc1Tune = 0.0f;
+    float osc1Detune = 0.0f;
+
+    // OSC 2 Variables
+    double phase2 = 0.0;
+    float masterGain2 = 0.0f;
+    WaveType currentWave2 = WaveType::Sine;
+    float osc2Tune = 0.0f;
+    float osc2Detune = 0.0f;
+
+    // Filter Variables
+    float baseCutoff = 20000.0f;
+    float filterResonance = 0.707f;
+    float modDepth = 0.0f;
 };
 
 //==============================================================================
@@ -194,16 +254,13 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
-
-    std::array<float, 512> scopeData;
-    std::atomic<bool> nextFrameReady { false };
-    int scopePos = 0;
-
-    void pushNextSampleIntoScope (float sample);
+    
+    // Thread-safe pointer to feed the oscilloscope
+    std::atomic<juce::AudioVisualiserComponent*> visualizer { nullptr };
 
 private:
-    juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::Synthesiser synth;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CortexiaAudioProcessor)
 };

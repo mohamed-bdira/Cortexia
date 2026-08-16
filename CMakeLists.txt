@@ -18,6 +18,7 @@ juce_add_plugin(Cortexia
     PLUGIN_CODE "Co01"
     FORMATS VST3 AU Standalone
     PRODUCT_NAME "Cortexia"
+    COMPANY_NAME "Haramonics"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
@@ -55,6 +56,7 @@ juce_add_plugin(CortexiaFX
     PLUGIN_CODE "CoFX"  
     FORMATS VST3 AU
     PRODUCT_NAME "CortexiaFX"
+    COMPANY_NAME "Haramonics"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
