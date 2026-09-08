@@ -29,9 +29,30 @@ juce_add_plugin(Cortexia
 juce_generate_juce_header(Cortexia)
 
 target_sources(Cortexia PRIVATE
-    Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp
+    # Core
+    Source/Core/PluginProcessor.cpp
+    Source/Core/PluginProcessor.h
+    Source/Core/PluginEditor.cpp
+    Source/Core/PluginEditor.h
+
+    # DSP
+    Source/DSP/LFO.cpp
+    Source/DSP/LFO.h
+    Source/DSP/Oscillator.cpp
+    Source/DSP/Oscillator.h
+    Source/DSP/StateVariableFilter.cpp
+    Source/DSP/StateVariableFilter.h
+    Source/DSP/SynthVoice.cpp
+    Source/DSP/SynthVoice.h
+
+    # GUI
+    Source/GUI/ModernLookAndFeel.cpp
+    Source/GUI/ModernLookAndFeel.h
+    Source/GUI/WaveformDisplay.cpp
+    Source/GUI/WaveformDisplay.h
 )
+
+target_include_directories(Cortexia PRIVATE Source)
 
 target_link_libraries(Cortexia PRIVATE
     juce::juce_audio_utils
@@ -67,9 +88,30 @@ juce_add_plugin(CortexiaFX
 juce_generate_juce_header(CortexiaFX)
 
 target_sources(CortexiaFX PRIVATE
-    Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp
+    # Core
+    Source/Core/PluginProcessor.cpp
+    Source/Core/PluginProcessor.h
+    Source/Core/PluginEditor.cpp
+    Source/Core/PluginEditor.h
+
+    # DSP
+    Source/DSP/LFO.cpp
+    Source/DSP/LFO.h
+    Source/DSP/Oscillator.cpp
+    Source/DSP/Oscillator.h
+    Source/DSP/StateVariableFilter.cpp
+    Source/DSP/StateVariableFilter.h
+    Source/DSP/SynthVoice.cpp
+    Source/DSP/SynthVoice.h
+
+    # GUI
+    Source/GUI/ModernLookAndFeel.cpp
+    Source/GUI/ModernLookAndFeel.h
+    Source/GUI/WaveformDisplay.cpp
+    Source/GUI/WaveformDisplay.h
 )
+
+target_include_directories(CortexiaFX PRIVATE Source)
 
 target_link_libraries(CortexiaFX PRIVATE
     juce::juce_audio_utils
