@@ -6,6 +6,7 @@ CortexiaAudioProcessor::CortexiaAudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
        apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
+    AnalogWavetableBank::getInstance();
     synth.addSound (new SynthSound());
     for (int i = 0; i < 8; ++i)
         synth.addVoice (new SynthVoice());
@@ -28,6 +29,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterInt>   ("UNISON1", "Osc 1 Unison", 1, 7, 1));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("UDETUNE1", "Osc 1 Unison Detune", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.2f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("UBLEND1", "Osc 1 Unison Blend", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.75f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("WTPOS1", "Osc 1 WT Position", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
 
     // OSC 2 PARAMETERS
     params.push_back (std::make_unique<juce::AudioParameterChoice> ("OSC2", "Osc 2 Waveform", juce::StringArray { "Sine", "Sawtooth", "Square", "Triangle" }, 0));
@@ -37,6 +39,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterInt>   ("UNISON2", "Osc 2 Unison", 1, 7, 1));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("UDETUNE2", "Osc 2 Unison Detune", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.2f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("UBLEND2", "Osc 2 Unison Blend", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.75f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("WTPOS2", "Osc 2 WT Position", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
 
     // FILTER PARAMETERS
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("CUTOFF", "Cutoff", juce::NormalisableRange<float> (20.0f, 20000.0f, 1.0f, 0.25f), 20000.0f));
@@ -96,6 +99,8 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    keyboardState.processNextMidiBuffer (midiMessages, 0, buffer.getNumSamples(), true);
+
     auto masterVol = apvts.getRawParameterValue ("MASTER_VOL")->load();
 
     auto waveType1 = (WaveType) apvts.getRawParameterValue ("OSC")->load();
@@ -105,6 +110,7 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto uni1 = (int) apvts.getRawParameterValue ("UNISON1")->load();
     auto uDet1 = apvts.getRawParameterValue ("UDETUNE1")->load();
     auto uBlnd1 = apvts.getRawParameterValue ("UBLEND1")->load();
+    auto wtPos1 = apvts.getRawParameterValue ("WTPOS1")->load();
     
     auto waveType2 = (WaveType) apvts.getRawParameterValue ("OSC2")->load();
     auto gain2 = apvts.getRawParameterValue ("VOL2")->load();
@@ -113,6 +119,7 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto uni2 = (int) apvts.getRawParameterValue ("UNISON2")->load();
     auto uDet2 = apvts.getRawParameterValue ("UDETUNE2")->load();
     auto uBlnd2 = apvts.getRawParameterValue ("UBLEND2")->load();
+    auto wtPos2 = apvts.getRawParameterValue ("WTPOS2")->load();
 
     auto cutoff = apvts.getRawParameterValue ("CUTOFF")->load();
     auto resonance = apvts.getRawParameterValue ("RESONANCE")->load();
@@ -129,8 +136,8 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
         if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
-            voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1,
-                                     waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2,
+            voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1,
+                                     waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2,
                                      adsrParams, cutoff, resonance, lfoRate, lfoDepth, lfoTarget, masterVol);
     }
 
