@@ -40,6 +40,8 @@ target_sources(Cortexia PRIVATE
     Source/DSP/LFO.h
     Source/DSP/Oscillator.cpp
     Source/DSP/Oscillator.h
+    Source/DSP/Wavetable.cpp
+    Source/DSP/Wavetable.h
     Source/DSP/StateVariableFilter.cpp
     Source/DSP/StateVariableFilter.h
     Source/DSP/SynthVoice.cpp
@@ -99,6 +101,8 @@ target_sources(CortexiaFX PRIVATE
     Source/DSP/LFO.h
     Source/DSP/Oscillator.cpp
     Source/DSP/Oscillator.h
+    Source/DSP/Wavetable.cpp
+    Source/DSP/Wavetable.h
     Source/DSP/StateVariableFilter.cpp
     Source/DSP/StateVariableFilter.h
     Source/DSP/SynthVoice.cpp

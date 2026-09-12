@@ -29,6 +29,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
+    juce::MidiKeyboardState keyboardState;
     std::atomic<juce::AudioVisualiserComponent*> visualizer { nullptr };
 
 private:

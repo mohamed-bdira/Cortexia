@@ -5,6 +5,8 @@ bin/
 *.cmake
 CMakeCache.txt
 CMakeFiles/
+CMakeLists.txt
+PROGRESS.md
 
 # Visual Studio & Windows specific files
 .vs/

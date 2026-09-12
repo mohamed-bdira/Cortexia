@@ -1,10 +1,10 @@
 # Cortexia — progress notes
 
-Snapshot of the codebase as of 8 September 2026. This is a status log, not a design spec for the finished product.
+Snapshot of the codebase as of 12 September 2026. This is a status log, not a design spec for the finished product.
 
 **End goal:** a synth VST that mixes **Serum 2** (wavetable / visual osc workflow, modulation, FX) and **Harmor** (additive / harmonic control, image-like spectral editing).
 
-**Where we are:** a playable **virtual analog** instrument with two classic oscillators, unison, a low-pass filter, one LFO, ADSR, and a dark modular GUI. Nothing wavetable, additive, or AI yet.
+**Where we are:** a playable **wavetable VA** instrument: two osc slots read Fourier-generated analog tables (mipmaps + 2x cubic lookup), unison, a low-pass filter, one LFO, ADSR, WT position (1 frame for now), and a dark modular GUI. No multi-frame import, Harmor additive, or AI yet.
 
 ---
 
@@ -31,16 +31,17 @@ Existing one-line vision in [`README.md`](README.md): Serum-like, plus possible 
 ```
 Source/
   Core/     PluginProcessor, PluginEditor
-  DSP/      Oscillator, SynthVoice, LFO, StateVariableFilter
-  GUI/      ModernLookAndFeel, WaveformDisplay
+  DSP/      Wavetable, Oscillator, SynthVoice, LFO, StateVariableFilter
+  GUI/      ModernLookAndFeel, WaveformDisplay (plus filter/env/LFO graphs)
 ```
 
 | File | Role |
 |---|---|
 | [`Source/Core/PluginProcessor.h`](Source/Core/PluginProcessor.h) / [`.cpp`](Source/Core/PluginProcessor.cpp) | APVTS parameters, 8-voice `juce::Synthesiser`, `processBlock`, state XML, visualizer pointer |
 | [`Source/Core/PluginEditor.h`](Source/Core/PluginEditor.h) / [`.cpp`](Source/Core/PluginEditor.cpp) | 1000×650 UI, knobs, waveform drawings, oscilloscope |
-| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: osc 1+2, ADSR, stereo SVF, LFO routing |
-| [`Source/DSP/Oscillator.h`](Source/DSP/Oscillator.h) / [`.cpp`](Source/DSP/Oscillator.cpp) | Standalone osc class (compiled, **not used** by the voice) |
+| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: two `Oscillator`s, ADSR, stereo SVF, LFO routing |
+| [`Source/DSP/Oscillator.h`](Source/DSP/Oscillator.h) / [`.cpp`](Source/DSP/Oscillator.cpp) | Live osc: unison + wavetable playback |
+| [`Source/DSP/Wavetable.h`](Source/DSP/Wavetable.h) / [`.cpp`](Source/DSP/Wavetable.cpp) | 2048-sample frames, 8 mips, analog Fourier bank |
 | [`Source/DSP/LFO.h`](Source/DSP/LFO.h) / [`.cpp`](Source/DSP/LFO.cpp) | Sine LFO |
 | [`Source/DSP/StateVariableFilter.h`](Source/DSP/StateVariableFilter.h) / [`.cpp`](Source/DSP/StateVariableFilter.cpp) | TPT SVF, low-pass only |
 | [`Source/GUI/ModernLookAndFeel.h`](Source/GUI/ModernLookAndFeel.h) / [`.cpp`](Source/GUI/ModernLookAndFeel.cpp) | Rotary knobs, combo/popup colours |
@@ -56,8 +57,8 @@ Old flat files (`Source/PluginProcessor.*`, `Source/pluginEditor.h`) were moved 
 flowchart LR
   MIDI --> Synth["juce::Synthesiser 8 voices"]
   Synth --> Voice[SynthVoice]
-  Voice --> Osc1["Osc 1 naive wave + unison"]
-  Voice --> Osc2["Osc 2 naive wave + unison"]
+  Voice --> Osc1["Osc 1 wavetable + unison"]
+  Voice --> Osc2["Osc 2 wavetable + unison"]
   Osc1 --> Mix[Sum stereo]
   Osc2 --> Mix
   Mix --> ADSR
@@ -82,14 +83,16 @@ Pitch wheel and MIDI CCs are stubbed (empty).
 
 ## Oscillators and unison (live path)
 
-Implemented **inside** `SynthVoice::renderNextBlock`, not via the `Oscillator` class.
+`SynthVoice` owns two `Oscillator` instances. Analog shapes are **generated wavetables** in `AnalogWavetableBank` (shared, built once at plugin load).
 
-- Shapes: Sine, Saw, Square, Triangle (`WaveType`). Naive math, **no band-limiting / BLEP**.
-- Tune: ±24 semitones (integer steps). Detune: ±50 cents.
-- Unison: 1–7 voices. Voice 0 is centre; others are paired left/right with pan spread and extra detune (`unisonDetune * 50` cents scale). Blend scales side voices by `blend / sqrt(N-1)`.
-- Osc 2 defaults to volume **0** (silent until raised). Osc 1 defaults to saw, volume 0.5.
+- Table: 2048 samples, 1 frame, 8 Fourier mips (Lanczos σ), peak-normalized to ~0.9
+- Playback: mip pick from Hz, Catmull-Rom cubic, 2x oversampled lookup + 5-tap downsample
+- `WTPOS1` / `WTPOS2` (`0..1`) morph between frames; with one frame this is a no-op hook for later multi-frame / Harmor fills
+- Tune: ±24 semitones. Detune: ±50 cents. Unison 1–7 unchanged (centre + paired pan/detune, blend)
+- Osc 2 defaults to volume **0**. Osc 1 defaults to saw, volume 0.5
+- LFO Pitch 1 is `extraSemitones` on osc 1 only
 
-Note-on randomizes 7 phases per oscillator and resets both filters.
+Note-on randomizes table phases and clears 2x history; filters reset.
 
 ---
 
@@ -114,12 +117,12 @@ State is XML via `getStateInformation` / `setStateInformation`. Hosts can save/r
 | `VOLUME` | Osc 1 Vol | 0.50 |
 | `TUNE1` / `DETUNE1` | Tune / Detune | 0 |
 | `UNISON1` | Voices | 1 |
-| `UDETUNE1` / `UBLEND1` | U.Detune / U.Blend | 0.20 / 0.75 |
+| `UDETUNE1` / `UBLEND1` / `WTPOS1` | U.Detune / U.Blend / WT Pos | 0.20 / 0.75 / 0.00 |
 | `OSC2` | Osc 2 waveform | Sine |
 | `VOL2` | Osc 2 Vol | 0.00 |
 | `TUNE2` / `DETUNE2` | Tune / Detune | 0 |
 | `UNISON2` | Voices | 1 |
-| `UDETUNE2` / `UBLEND2` | U.Detune / U.Blend | 0.20 / 0.75 |
+| `UDETUNE2` / `UBLEND2` / `WTPOS2` | U.Detune / U.Blend / WT Pos | 0.20 / 0.75 / 0.00 |
 | `CUTOFF` | Cutoff | 20000 |
 | `RESONANCE` | Resonance | 0.707 |
 | `LFO_RATE` / `LFO_DEPTH` / `LFO_TARGET` | Rate / Depth / Target | 2.0 / 0.00 / Cutoff |
@@ -129,22 +132,18 @@ State is XML via `getStateInformation` / `setStateInformation`. Hosts can save/r
 
 ## GUI (current look)
 
-Editor size: **1000 × 650**. Dark vertical gradient (`#121418` → `#090a0c`). Rounded panels with drop shadow, 1.5 px border, coloured accent bar on top.
+Editor size: **1280 × 720**. Mockup-inspired dark navy (`#0a0e14` → `#0d1218`), inset panels `#121820`, 1 px `#1c2430` borders, 8 px corners. No fake Harmor / matrix / FX panels.
 
 | Panel | Accent | Contents |
 |---|---|---|
-| Header | — | **CORTEXIA** + *VIRTUAL ANALOG* |
-| Oscilloscope | rose waveform on near-black | Thin bar ~582,22 286×41; 30 fps, buffer 256 |
-| Master | rose `#f43f5e` | Large rotary, default 0.80 |
-| Oscillator 1 | cyan `#38bdf8` | Wave preview + combo overlay; Vol, Tune, Detune, Voices; U.Blend beside the wave, U.Detune in the knob row |
-| Oscillator 2 | same cyan | Same layout; Sine, Vol 0.00 |
-| Filter | orange `#fb923c` | Large Cutoff, Resonance below |
-| Modulation | purple `#c084fc` | Target combo (None / Cutoff / Pitch 1), Rate, Depth |
-| Envelope | green `#4ade80` | Attack, Decay, Sustain, Release — tall knobs in the right column |
+| Header | teal | Left/center **CORTEXIA**, subtitle **SPECTRAL SYNTHESIZER**, scope + master |
+| OSC A / OSC B | `#2ee6c8` / `#38bdf8` | Wavetable badge, shape combo, live table preview (stacked strokes), 7 knobs |
+| Filter | teal | LP response curve from cutoff/Q, Cutoff + Res knobs |
+| Envelope | `#4ade80` | ADSR shape graph + Attack/Decay/Sustain/Release |
+| LFO | `#e879f9` | Sine graph (depth), Rate, Depth, Target |
+| Keyboard | — | On-screen MIDI (C1–C6) into the synth |
 
-Wave previews are **painted** (`drawWaveformPath`) over dark rounded “screens”; a transparent `ComboBox` sits on top for selection. Changing the combo `repaint()`s the path.
-
-Knobs: `ModernLookAndFeel` — grey track arc, coloured value arc from `rotarySliderFillColourId`, dark disc, light pointer. Text boxes below, no outline.
+`WaveformDisplay` samples mip 0 of `AnalogWavetableBank`. Knobs: thin 2.5 px arcs, dark caps. Combos are dark pills (not overlaid on the wave).
 
 Host/standalone chrome may show a **Presets** menu; that is not implemented in the editor.
 
@@ -152,10 +151,9 @@ Host/standalone chrome may show a **Presets** menu; that is not implemented in t
 
 ## Unused / duplicated code
 
-- **`Oscillator`**: same wave + unison math as `SynthVoice`. Voice still has its own `phase1[7]` / `phase2[7]` loops. Wiring the class in would remove duplication.
-- **`WaveformDisplay`**: independent component with similar path drawing. Editor does not instantiate it.
+None of the GUI display classes are unused: `WaveformDisplay` is the osc preview; filter / ADSR / LFO graphs live in the same files.
 
-Both are listed in `target_sources` for Cortexia and CortexiaFX.
+`Oscillator` is the live osc path. Harmor should later fill `Wavetable` frames (then rebuild mips), not duplicate voice render loops.
 
 ---
 
@@ -163,12 +161,12 @@ Both are listed in `target_sources` for Cortexia and CortexiaFX.
 
 | Area | Now | Not yet |
 |---|---|---|
-| Oscillators | 2× analog shapes | Wavetables, WT position, extra oscs, noise, sub, Harmor partials |
+| Oscillators | 2× analog wavetables, WT pos (1 frame) | Multi-frame WT import, extra oscs, noise, sub, Harmor partials |
 | Unison | Analog spread 1–7 | Serum-style unison / warp / unison as WT feature |
 | Filter | LP SVF only | HP/BP/notch, types, drive, envelope amount dedicated to filter |
 | Modulation | 1 sine LFO, 2 targets | Matrix, macros, multi-LFO/env, per-harmonic envelopes |
 | FX | None | Distortion, delay, reverb, chorus, compressor, etc. |
-| Visuals | Static wave icons + thin scope | WT 3D/2D, FFT, additive bars, image-to-partials |
+| Visuals | Table preview, filter/env/LFO graphs, keyboard, thin scope | WT 3D mesh, FFT, additive bars, image-to-partials |
 | Presets | Host state only | Browser, init, morph |
 | AI | README mention only | Generate WT / presets / FX |
 | CortexiaFX | Same binary sources as synth | Real mixer/effect plugin |
@@ -177,4 +175,4 @@ Both are listed in `target_sources` for Cortexia and CortexiaFX.
 
 ## What this milestone is
 
-A **VA prototype**: MIDI in, two mixable oscillators with unison, LP filter, one LFO, ADSR, master, themed UI, and host automation/state. Solid base to grow toward wavetable (Serum 2) and additive/harmonic (Harmor) engines without throwing away the voice, parameter, and panel structure.
+A **wavetable VA**: MIDI in, two mixable table oscs with unison, LP filter, one LFO, ADSR, master, themed UI, and host automation/state. Next toward Serum 2 / Harmor: multi-frame tables or additive fills of the same `Wavetable` slot.
