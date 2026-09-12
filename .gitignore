@@ -5,8 +5,11 @@ bin/
 *.cmake
 CMakeCache.txt
 CMakeFiles/
+
+# Local project files (not committed)
 CMakeLists.txt
 PROGRESS.md
+ROADMAP.md
 
 # Visual Studio & Windows specific files
 .vs/
