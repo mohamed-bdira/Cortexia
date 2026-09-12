@@ -11,6 +11,7 @@ public:
                         int unisonCount, float unisonDetune, float unisonBlend,
                         float wtPosition);
     void resetPhases();
+    void setWtPosition (float wtPosition);
     void processNextSample (double basePitch, float extraSemitones, float& sampleL, float& sampleR);
 
 private:

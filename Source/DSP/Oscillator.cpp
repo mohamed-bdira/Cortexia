@@ -45,6 +45,11 @@ void Oscillator::setParameters (WaveType type, float gain, float tune, float det
     wtPosition = juce::jlimit (0.0f, 1.0f, wtPos);
 }
 
+void Oscillator::setWtPosition (float wtPos)
+{
+    wtPosition = juce::jlimit (0.0f, 1.0f, wtPos);
+}
+
 int Oscillator::pickMip (double freqHz, const Wavetable::Frame& frame) const
 {
     const double osRate = currentSampleRate * 2.0;

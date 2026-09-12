@@ -31,16 +31,17 @@ Existing one-line vision in [`README.md`](README.md): Serum-like, plus possible 
 ```
 Source/
   Core/     PluginProcessor, PluginEditor
-  DSP/      Wavetable, Oscillator, SynthVoice, CortexiaSynth, LFO, StateVariableFilter
+  DSP/      Wavetable, Oscillator, SynthVoice, CortexiaSynth, ModMatrix, LFO, StateVariableFilter
   GUI/      ModernLookAndFeel, WaveformDisplay (plus filter/env/LFO graphs)
 ```
 
 | File | Role |
 |---|---|
 | [`Source/Core/PluginProcessor.h`](Source/Core/PluginProcessor.h) / [`.cpp`](Source/Core/PluginProcessor.cpp) | APVTS parameters, 8-voice `CortexiaSynthesiser`, `processBlock`, state XML, visualizer pointer |
-| [`Source/Core/PluginEditor.h`](Source/Core/PluginEditor.h) / [`.cpp`](Source/Core/PluginEditor.cpp) | 1280×720 UI, knobs, waveform drawings, oscilloscope, voicing strip |
+| [`Source/Core/PluginEditor.h`](Source/Core/PluginEditor.h) / [`.cpp`](Source/Core/PluginEditor.cpp) | 1280×720 UI, Osc/Matrix tabs, knobs, oscilloscope, voicing strip |
 | [`Source/DSP/CortexiaSynth.h`](Source/DSP/CortexiaSynth.h) / [`.cpp`](Source/DSP/CortexiaSynth.cpp) | Poly vs mono/legato MIDI, note stack, porta/Always flags |
-| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: two `Oscillator`s, ADSR, stereo SVF, LFO routing, porta glide |
+| [`Source/DSP/ModMatrix.h`](Source/DSP/ModMatrix.h) | 8-slot source/dest/amount/bipolar pack |
+| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: two `Oscillator`s, ADSR, stereo SVF, matrix apply, porta glide |
 | [`Source/DSP/Oscillator.h`](Source/DSP/Oscillator.h) / [`.cpp`](Source/DSP/Oscillator.cpp) | Live osc: unison + wavetable playback |
 | [`Source/DSP/Wavetable.h`](Source/DSP/Wavetable.h) / [`.cpp`](Source/DSP/Wavetable.cpp) | 2048-sample frames, 8 mips, analog Fourier bank |
 | [`Source/DSP/LFO.h`](Source/DSP/LFO.h) / [`.cpp`](Source/DSP/LFO.cpp) | Sine LFO |
@@ -64,8 +65,11 @@ flowchart LR
   Osc2 --> Mix
   Mix --> ADSR
   ADSR --> SVF["SVF low-pass L/R"]
-  LFO["Sine LFO"] --> CutoffOrPitch["Cutoff or Osc1 pitch"]
-  CutoffOrPitch --> SVF
+  Matrix["8-slot matrix"] --> Dests["Cutoff pitch vol WT master"]
+  LFO["Sine LFO"] --> Matrix
+  Env[Env1] --> Matrix
+  VelMW["Vel MW Keytrack"] --> Matrix
+  Dests --> SVF
   SVF --> Master["Master volume"]
   Master --> Out[Stereo out]
   Out --> Scope["AudioVisualiserComponent"]
@@ -73,12 +77,12 @@ flowchart LR
 
 1. Processor reads APVTS once per block and pushes values into every `SynthVoice`.
 2. Each voice renders sample-by-sample: unison oscillators → velocity × ADSR × master → stereo LP filter.
-3. LFO is per-voice sine. Target `None` (0), `Cutoff` (1), or `Pitch 1` (2). Cutoff modulation is `baseCutoff * (1 + lfo * depth)`. Pitch 1 adds up to ±12 semitones at full depth.
+3. LFO is per-voice sine. Depth 0–1 scales LFO1 as a matrix source. Eight matrix slots add to cutoff, osc pitch/vol/WT pos, and master. Cutoff: `base * (1 + contrib)`. Pitch: `contrib * 12` semitones. Amount 0 is silence on that slot.
 4. Mixer-down of L/R is pushed to the editor oscilloscope if the editor is open (`std::atomic` pointer; cleared in the editor destructor).
 
 Polyphony: **8** voices. Modes **Poly / Mono / Legato**, portamento 0–2 s, **Always** glide. One `SynthSound` accepts all notes/channels.
 
-Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2) on the gliding pitch. CC1 (mod wheel) and CC11 (expression) are stored 0–1 on the processor/voices for the future matrix; they do not modulate anything yet. On-screen **MW** knob writes the same CC1 value.
+Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2) on the gliding pitch. CC1 (mod wheel) and CC11 (expression) are stored 0–1. CC1 is a matrix source (**ModWheel**). On-screen **MW** knob writes the same CC1 value.
 
 ---
 
@@ -91,7 +95,7 @@ Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2)
 - `WTPOS1` / `WTPOS2` (`0..1`) morph between frames; with one frame this is a no-op hook for later multi-frame / Harmor fills
 - Tune: ±24 semitones. Detune: ±50 cents. Unison 1–7 unchanged (centre + paired pan/detune, blend)
 - Osc 2 defaults to volume **0**. Osc 1 defaults to saw, volume 0.5
-- LFO Pitch 1 is `extraSemitones` on osc 1 only
+- Osc1/Osc2 pitch, vol, and WT pos are matrix destinations
 
 Note-on randomizes table phases and clears 2x history; filters reset.
 
@@ -130,23 +134,27 @@ State is XML via `getStateInformation` / `setStateInformation`. Hosts can save/r
 | `UDETUNE2` / `UBLEND2` / `WTPOS2` | U.Detune / U.Blend / WT Pos | 0.20 / 0.75 / 0.00 |
 | `CUTOFF` | Cutoff | 20000 |
 | `RESONANCE` | Resonance | 0.707 |
-| `LFO_RATE` / `LFO_DEPTH` / `LFO_TARGET` | Rate / Depth / Target | 2.0 / 0.00 / Cutoff |
+| `LFO_RATE` / `LFO_DEPTH` | Rate / Depth | 2.0 / 0.00 |
+| `LFO_TARGET` | unused (legacy XML) | Cutoff |
 | `ATTACK` / `DECAY` / `SUSTAIN` / `RELEASE` | ADSR | 0.10 / 0.10 / 0.80 / 0.40 |
+| `MTX1_SRC` / `_DST` / `_AMT` / `_BIP` | Slot 1 | LFO 1 / Cutoff / 0 / off |
+| `MTX2`–`MTX8` `_*` | Slots 2–8 | None / None / 0 / off |
 
 ---
 
 ## GUI (current look)
 
-Editor size: **1280 × 720**. Mockup-inspired dark navy (`#0a0e14` → `#0d1218`), inset panels `#121820`, 1 px `#1c2430` borders, 8 px corners. No fake Harmor / matrix / FX panels.
+Editor size: **1280 × 720**. Header tabs **OSC** | **MATRIX**. Mockup-inspired dark navy (`#0a0e14` → `#0d1218`), inset panels `#121820`, 1 px `#1c2430` borders, 8 px corners.
 
 | Panel | Accent | Contents |
 |---|---|---|
-| Header | teal | **CORTEXIA**, **SPECTRAL SYNTHESIZER**, scope, **BEND** range, master |
-| OSC A / OSC B | `#2ee6c8` / `#38bdf8` | Wavetable badge, shape combo, live table preview (stacked strokes), 7 knobs |
-| Filter | teal | LP response curve from cutoff/Q, Cutoff + Res knobs |
-| Envelope | `#4ade80` | ADSR shape graph + Attack/Decay/Sustain/Release |
-| LFO | `#e879f9` | Sine graph (depth), Rate, Depth, Target |
-| Keyboard | — | Voicing (MODE / PORTA / ALWAYS), keys (C1–C6), **MW** readout/wheel |
+| Header | teal | **CORTEXIA**, **OSC** / **MATRIX** tabs, scope, **BEND** range, master |
+| OSC A / OSC B | `#2ee6c8` / `#38bdf8` | Osc page: wavetable badge, shape combo, live table preview, 7 knobs |
+| Filter | teal | Osc page: LP response curve, Cutoff + Res |
+| Envelope | `#4ade80` | Osc page: ADSR graph + knobs |
+| LFO | `#e879f9` | Osc page: sine graph, Rate, Depth |
+| Matrix | teal | Matrix page: 8 rows (source, dest, amount, bipolar) |
+| Keyboard | — | Both pages: voicing (MODE / PORTA / ALWAYS), keys (C1–C6), **MW** |
 
 `WaveformDisplay` samples mip 0 of `AnalogWavetableBank`. Knobs: thin 2.5 px arcs, dark caps. Combos are dark pills (not overlaid on the wave).
 
@@ -169,7 +177,7 @@ None of the GUI display classes are unused: `WaveformDisplay` is the osc preview
 | Oscillators | 2× analog wavetables, WT pos (1 frame) | Multi-frame WT import, extra oscs, noise, sub, Harmor partials |
 | Unison | Analog spread 1–7 | Serum-style unison / warp / unison as WT feature |
 | Filter | LP SVF only | HP/BP/notch, types, drive, envelope amount dedicated to filter |
-| Modulation | 1 sine LFO, 2 targets | Matrix, macros, multi-LFO/env, per-harmonic envelopes |
+| Modulation | 8-slot matrix (LFO1, Env1, Vel, MW, Keytrack) | Macros, extra LFOs/envs, aftertouch |
 | FX | None | Distortion, delay, reverb, chorus, compressor, etc. |
 | Visuals | Table preview, filter/env/LFO graphs, keyboard, thin scope | WT 3D mesh, FFT, additive bars, image-to-partials |
 | Presets | Host state only | Browser, init, morph |
@@ -180,4 +188,4 @@ None of the GUI display classes are unused: `WaveformDisplay` is the osc preview
 
 ## What this milestone is
 
-A **wavetable VA**: MIDI in, two mixable table oscs with unison, LP filter, one LFO, ADSR, master, themed UI, and host automation/state. Next toward Serum 2 / Harmor: multi-frame tables or additive fills of the same `Wavetable` slot.
+A **wavetable VA** with an 8-slot modulation matrix: MIDI in, two mixable table oscs with unison, LP filter, one LFO, ADSR, master, themed UI, and host automation/state. Next: 2.2 aftertouch / leftover LFO_TARGET cleanup.

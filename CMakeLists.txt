@@ -48,6 +48,7 @@ target_sources(Cortexia PRIVATE
     Source/DSP/SynthVoice.h
     Source/DSP/CortexiaSynth.cpp
     Source/DSP/CortexiaSynth.h
+    Source/DSP/ModMatrix.h
 
     # GUI
     Source/GUI/ModernLookAndFeel.cpp
@@ -111,6 +112,7 @@ target_sources(CortexiaFX PRIVATE
     Source/DSP/SynthVoice.h
     Source/DSP/CortexiaSynth.cpp
     Source/DSP/CortexiaSynth.h
+    Source/DSP/ModMatrix.h
 
     # GUI
     Source/GUI/ModernLookAndFeel.cpp
