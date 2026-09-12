@@ -63,7 +63,7 @@ void CortexiaSynthesiser::handleNoteOn (int channel, int note, float velocity)
     else
     {
         const bool retriggerEnv = (mode == VoiceMode::Mono) || (mode == VoiceMode::Legato && ! wasHolding);
-        voice->retriggerPitch (newHz, retriggerEnv);
+        voice->retriggerPitch (note, retriggerEnv);
     }
 
     lastPitchHz = newHz;
@@ -88,9 +88,9 @@ void CortexiaSynthesiser::handleNoteOff (int channel, int note, float velocity)
     }
     else if (voice != nullptr)
     {
-        const double hz = juce::MidiMessage::getMidiNoteInHertz (heldNotes.back());
-        voice->retriggerPitch (hz, false);
-        lastPitchHz = hz;
+        const int remain = heldNotes.back();
+        voice->retriggerPitch (remain, false);
+        lastPitchHz = juce::MidiMessage::getMidiNoteInHertz (remain);
         pushGlideStateToVoices();
     }
 }

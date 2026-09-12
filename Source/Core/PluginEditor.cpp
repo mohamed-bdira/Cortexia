@@ -19,6 +19,16 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     setLookAndFeel (&customLookAndFeel);
     audioProcessor.visualizer.store (&oscilloscope);
 
+    oscPageButton.setClickingTogglesState (true);
+    matrixPageButton.setClickingTogglesState (true);
+    oscPageButton.setRadioGroupId (1);
+    matrixPageButton.setRadioGroupId (1);
+    oscPageButton.setToggleState (true, juce::dontSendNotification);
+    addAndMakeVisible (oscPageButton);
+    addAndMakeVisible (matrixPageButton);
+    oscPageButton.onClick = [this] { setEditorPage (0); };
+    matrixPageButton.onClick = [this] { setEditorPage (1); };
+
     setupKnob (masterVolSlider, masterVolLabel, "MASTER", colOsc);
     masterVolAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "MASTER_VOL", masterVolSlider);
     setupKnob (bendRangeSlider, bendRangeLabel, "BEND", colOsc);
@@ -74,16 +84,6 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     setupKnob (resonanceSlider, resonanceLabel, "RES", colFilt);
     resonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "RESONANCE", resonanceSlider);
 
-    lfoTargetSelector.addItemList ({ "None", "Cutoff", "Pitch 1" }, 1);
-    lfoTargetSelector.setLookAndFeel (&customLookAndFeel);
-    addAndMakeVisible (lfoTargetSelector);
-    lfoTargetAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (audioProcessor.apvts, "LFO_TARGET", lfoTargetSelector);
-    lfoTargetLabel.setText ("TARGET", juce::dontSendNotification);
-    lfoTargetLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-    lfoTargetLabel.setJustificationType (juce::Justification::centred);
-    lfoTargetLabel.setColour (juce::Label::textColourId, colMute);
-    addAndMakeVisible (lfoTargetLabel);
-
     setupKnob (lfoRateSlider, lfoRateLabel, "RATE", colLfo);
     lfoRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "LFO_RATE", lfoRateSlider);
     setupKnob (lfoDepthSlider, lfoDepthLabel, "DEPTH", colLfo);
@@ -131,6 +131,54 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
         audioProcessor.setModWheel01 ((float) modWheelSlider.getValue());
     };
 
+    const juce::StringArray srcNames { "None", "LFO 1", "Env 1", "Vel", "ModWheel", "Keytrack" };
+    const juce::StringArray dstNames { "None", "Cutoff", "Osc1 Pitch", "Osc2 Pitch", "Osc1 Vol", "Osc2 Vol", "Osc1 WT", "Osc2 WT", "Master" };
+
+    auto setupHeader = [this] (juce::Label& label, const juce::String& text)
+    {
+        label.setText (text, juce::dontSendNotification);
+        label.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        label.setJustificationType (juce::Justification::centredLeft);
+        label.setColour (juce::Label::textColourId, colMute);
+        addAndMakeVisible (label);
+    };
+    setupHeader (matrixSrcHeader, "SRC");
+    setupHeader (matrixDstHeader, "DEST");
+    setupHeader (matrixAmtHeader, "AMT");
+    setupHeader (matrixBipHeader, "BIP");
+    setupHeader (matrixSrcHeader2, "SRC");
+    setupHeader (matrixDstHeader2, "DEST");
+    setupHeader (matrixAmtHeader2, "AMT");
+    setupHeader (matrixBipHeader2, "BIP");
+
+    for (int i = 0; i < 8; ++i)
+    {
+        auto& row = matrixRows[i];
+        const juce::String n = juce::String (i + 1);
+        row.src.addItemList (srcNames, 1);
+        row.dst.addItemList (dstNames, 1);
+        row.src.setLookAndFeel (&customLookAndFeel);
+        row.dst.setLookAndFeel (&customLookAndFeel);
+        addAndMakeVisible (row.src);
+        addAndMakeVisible (row.dst);
+        row.srcAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            audioProcessor.apvts, "MTX" + n + "_SRC", row.src);
+        row.dstAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            audioProcessor.apvts, "MTX" + n + "_DST", row.dst);
+
+        setupKnob (row.amt, row.amtLabel, {}, colOsc);
+        row.amtLabel.setVisible (false);
+        row.amt.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 14);
+        row.amtAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            audioProcessor.apvts, "MTX" + n + "_AMT", row.amt);
+
+        row.bip.setButtonText ({});
+        row.bip.setClickingTogglesState (true);
+        addAndMakeVisible (row.bip);
+        row.bipAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            audioProcessor.apvts, "MTX" + n + "_BIP", row.bip);
+    }
+
     waveDisplay1.setAccentColour (colOsc);
     waveDisplay2.setAccentColour (colOscB);
     addAndMakeVisible (waveDisplay1);
@@ -157,6 +205,7 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     refreshDisplays();
     startTimerHz (20);
     setSize (1280, 720);
+    applyEditorPageVisibility();
 }
 
 CortexiaAudioProcessorEditor::~CortexiaAudioProcessorEditor()
@@ -166,8 +215,12 @@ CortexiaAudioProcessorEditor::~CortexiaAudioProcessorEditor()
     keyboard.setLookAndFeel (nullptr);
     waveSelector1.setLookAndFeel (nullptr);
     waveSelector2.setLookAndFeel (nullptr);
-    lfoTargetSelector.setLookAndFeel (nullptr);
     voiceModeSelector.setLookAndFeel (nullptr);
+    for (auto& row : matrixRows)
+    {
+        row.src.setLookAndFeel (nullptr);
+        row.dst.setLookAndFeel (nullptr);
+    }
     setLookAndFeel (nullptr);
 }
 
@@ -212,6 +265,63 @@ void CortexiaAudioProcessorEditor::timerCallback()
         modWheelSlider.setValue (audioProcessor.lastModWheel.load(), juce::dontSendNotification);
 }
 
+void CortexiaAudioProcessorEditor::setEditorPage (int page)
+{
+    editorPage = page;
+    applyEditorPageVisibility();
+    resized();
+    repaint();
+}
+
+void CortexiaAudioProcessorEditor::applyEditorPageVisibility()
+{
+    const bool osc = editorPage == 0;
+    const bool mtx = ! osc;
+
+    auto visOsc = [osc] (juce::Component& c) { c.setVisible (osc); };
+    visOsc (waveSelector1); visOsc (waveSelector2);
+    visOsc (volumeSlider1); visOsc (volumeLabel1);
+    visOsc (tuneSlider1); visOsc (tuneLabel1);
+    visOsc (detuneSlider1); visOsc (detuneLabel1);
+    visOsc (unisonSlider1); visOsc (unisonLabel1);
+    visOsc (uDetuneSlider1); visOsc (uDetuneLabel1);
+    visOsc (uBlendSlider1); visOsc (uBlendLabel1);
+    visOsc (wtPosSlider1); visOsc (wtPosLabel1);
+    visOsc (volumeSlider2); visOsc (volumeLabel2);
+    visOsc (tuneSlider2); visOsc (tuneLabel2);
+    visOsc (detuneSlider2); visOsc (detuneLabel2);
+    visOsc (unisonSlider2); visOsc (unisonLabel2);
+    visOsc (uDetuneSlider2); visOsc (uDetuneLabel2);
+    visOsc (uBlendSlider2); visOsc (uBlendLabel2);
+    visOsc (wtPosSlider2); visOsc (wtPosLabel2);
+    visOsc (cutoffSlider); visOsc (cutoffLabel);
+    visOsc (resonanceSlider); visOsc (resonanceLabel);
+    visOsc (lfoRateSlider); visOsc (lfoRateLabel);
+    visOsc (lfoDepthSlider); visOsc (lfoDepthLabel);
+    visOsc (attackSlider); visOsc (attackLabel);
+    visOsc (decaySlider); visOsc (decayLabel);
+    visOsc (sustainSlider); visOsc (sustainLabel);
+    visOsc (releaseSlider); visOsc (releaseLabel);
+    visOsc (waveDisplay1); visOsc (waveDisplay2);
+    visOsc (filterDisplay); visOsc (envelopeGraph); visOsc (lfoGraph);
+
+    matrixSrcHeader.setVisible (mtx);
+    matrixDstHeader.setVisible (mtx);
+    matrixAmtHeader.setVisible (mtx);
+    matrixBipHeader.setVisible (mtx);
+    matrixSrcHeader2.setVisible (mtx);
+    matrixDstHeader2.setVisible (mtx);
+    matrixAmtHeader2.setVisible (mtx);
+    matrixBipHeader2.setVisible (mtx);
+    for (auto& row : matrixRows)
+    {
+        row.src.setVisible (mtx);
+        row.dst.setVisible (mtx);
+        row.amt.setVisible (mtx);
+        row.bip.setVisible (mtx);
+    }
+}
+
 void CortexiaAudioProcessorEditor::drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds) const
 {
     g.setColour (juce::Colour (0xff121820));
@@ -247,93 +357,133 @@ void CortexiaAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (11.0f));
     g.drawText ("SPECTRAL SYNTHESIZER", 0, 30, getWidth(), 16, juce::Justification::centred);
 
-    auto oscA = juce::Rectangle<float> (12.0f, 58.0f, 412.0f, 340.0f);
-    auto oscB = juce::Rectangle<float> (432.0f, 58.0f, 412.0f, 340.0f);
-    auto filt = juce::Rectangle<float> (852.0f, 58.0f, 416.0f, 340.0f);
-    auto env  = juce::Rectangle<float> (12.0f, 406.0f, 630.0f, 210.0f);
-    auto lfo  = juce::Rectangle<float> (650.0f, 406.0f, 618.0f, 210.0f);
-
-    drawPanel (g, oscA);
-    drawPanel (g, oscB);
-    drawPanel (g, filt);
-    drawPanel (g, env);
-    drawPanel (g, lfo);
-
-    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    g.setColour (juce::Colour (0xffe8edf4));
-    g.drawText ("OSC A", (int) oscA.getX() + 14, (int) oscA.getY() + 10, 70, 18, juce::Justification::left);
-    g.drawText ("OSC B", (int) oscB.getX() + 14, (int) oscB.getY() + 10, 70, 18, juce::Justification::left);
-    g.drawText ("FILTER", (int) filt.getX() + 14, (int) filt.getY() + 10, 90, 18, juce::Justification::left);
-    g.drawText ("ENVELOPE", (int) env.getX() + 14, (int) env.getY() + 10, 110, 18, juce::Justification::left);
-    g.drawText ("LFO", (int) lfo.getX() + 14, (int) lfo.getY() + 10, 70, 18, juce::Justification::left);
-
-    drawBadge (g, { oscA.getX() + 78.0f, oscA.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOsc);
-    drawBadge (g, { oscB.getX() + 78.0f, oscB.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOscB);
-    drawBadge (g, { filt.getX() + 88.0f, filt.getY() + 11.0f, 42.0f, 16.0f }, "LP", colFilt);
-
     g.setColour (juce::Colour (0xff1c2430));
     g.drawRoundedRectangle (960.0f, 10.0f, 168.0f, 36.0f, 5.0f, 1.0f);
+
+    if (editorPage == 0)
+    {
+        auto oscA = juce::Rectangle<float> (12.0f, 58.0f, 412.0f, 340.0f);
+        auto oscB = juce::Rectangle<float> (432.0f, 58.0f, 412.0f, 340.0f);
+        auto filt = juce::Rectangle<float> (852.0f, 58.0f, 416.0f, 340.0f);
+        auto env  = juce::Rectangle<float> (12.0f, 406.0f, 630.0f, 210.0f);
+        auto lfo  = juce::Rectangle<float> (650.0f, 406.0f, 618.0f, 210.0f);
+
+        drawPanel (g, oscA);
+        drawPanel (g, oscB);
+        drawPanel (g, filt);
+        drawPanel (g, env);
+        drawPanel (g, lfo);
+
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.setColour (juce::Colour (0xffe8edf4));
+        g.drawText ("OSC A", (int) oscA.getX() + 14, (int) oscA.getY() + 10, 70, 18, juce::Justification::left);
+        g.drawText ("OSC B", (int) oscB.getX() + 14, (int) oscB.getY() + 10, 70, 18, juce::Justification::left);
+        g.drawText ("FILTER", (int) filt.getX() + 14, (int) filt.getY() + 10, 90, 18, juce::Justification::left);
+        g.drawText ("ENVELOPE", (int) env.getX() + 14, (int) env.getY() + 10, 110, 18, juce::Justification::left);
+        g.drawText ("LFO", (int) lfo.getX() + 14, (int) lfo.getY() + 10, 70, 18, juce::Justification::left);
+
+        drawBadge (g, { oscA.getX() + 78.0f, oscA.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOsc);
+        drawBadge (g, { oscB.getX() + 78.0f, oscB.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOscB);
+        drawBadge (g, { filt.getX() + 88.0f, filt.getY() + 11.0f, 42.0f, 16.0f }, "LP", colFilt);
+    }
+    else
+    {
+        auto mtx = juce::Rectangle<float> (12.0f, 58.0f, 1256.0f, 558.0f);
+        drawPanel (g, mtx);
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.setColour (juce::Colour (0xffe8edf4));
+        g.drawText ("MATRIX", (int) mtx.getX() + 14, (int) mtx.getY() + 10, 110, 18, juce::Justification::left);
+        drawBadge (g, { mtx.getX() + 88.0f, mtx.getY() + 11.0f, 42.0f, 16.0f }, "8", colOsc);
+    }
 }
 
 void CortexiaAudioProcessorEditor::resized()
 {
+    oscPageButton.setBounds (772, 12, 72, 26);
+    matrixPageButton.setBounds (848, 12, 88, 26);
+
     oscilloscope.setBounds (961, 11, 166, 34);
     layoutKnob (bendRangeSlider, bendRangeLabel, { 1136, 4, 64, 72 });
     layoutKnob (masterVolSlider, masterVolLabel, { 1208, 4, 64, 72 });
 
-    waveSelector1.setBounds (270, 66, 140, 24);
-    waveDisplay1.setBounds (24, 100, 388, 168);
+    if (editorPage == 0)
     {
-        auto knobs = juce::Rectangle<int> (18, 276, 400, 110);
-        const int w = knobs.getWidth() / 7;
-        layoutKnob (volumeSlider1,  volumeLabel1,  knobs.removeFromLeft (w));
-        layoutKnob (tuneSlider1,    tuneLabel1,    knobs.removeFromLeft (w));
-        layoutKnob (detuneSlider1,  detuneLabel1,  knobs.removeFromLeft (w));
-        layoutKnob (wtPosSlider1,   wtPosLabel1,   knobs.removeFromLeft (w));
-        layoutKnob (unisonSlider1,  unisonLabel1,  knobs.removeFromLeft (w));
-        layoutKnob (uDetuneSlider1, uDetuneLabel1, knobs.removeFromLeft (w));
-        layoutKnob (uBlendSlider1,  uBlendLabel1,  knobs);
-    }
+        waveSelector1.setBounds (270, 66, 140, 24);
+        waveDisplay1.setBounds (24, 100, 388, 168);
+        {
+            auto knobs = juce::Rectangle<int> (18, 276, 400, 110);
+            const int w = knobs.getWidth() / 7;
+            layoutKnob (volumeSlider1,  volumeLabel1,  knobs.removeFromLeft (w));
+            layoutKnob (tuneSlider1,    tuneLabel1,    knobs.removeFromLeft (w));
+            layoutKnob (detuneSlider1,  detuneLabel1,  knobs.removeFromLeft (w));
+            layoutKnob (wtPosSlider1,   wtPosLabel1,   knobs.removeFromLeft (w));
+            layoutKnob (unisonSlider1,  unisonLabel1,  knobs.removeFromLeft (w));
+            layoutKnob (uDetuneSlider1, uDetuneLabel1, knobs.removeFromLeft (w));
+            layoutKnob (uBlendSlider1,  uBlendLabel1,  knobs);
+        }
 
-    waveSelector2.setBounds (690, 66, 140, 24);
-    waveDisplay2.setBounds (444, 100, 388, 168);
+        waveSelector2.setBounds (690, 66, 140, 24);
+        waveDisplay2.setBounds (444, 100, 388, 168);
+        {
+            auto knobs = juce::Rectangle<int> (438, 276, 400, 110);
+            const int w = knobs.getWidth() / 7;
+            layoutKnob (volumeSlider2,  volumeLabel2,  knobs.removeFromLeft (w));
+            layoutKnob (tuneSlider2,    tuneLabel2,    knobs.removeFromLeft (w));
+            layoutKnob (detuneSlider2,  detuneLabel2,  knobs.removeFromLeft (w));
+            layoutKnob (wtPosSlider2,   wtPosLabel2,   knobs.removeFromLeft (w));
+            layoutKnob (unisonSlider2,  unisonLabel2,  knobs.removeFromLeft (w));
+            layoutKnob (uDetuneSlider2, uDetuneLabel2, knobs.removeFromLeft (w));
+            layoutKnob (uBlendSlider2,  uBlendLabel2,  knobs);
+        }
+
+        filterDisplay.setBounds (864, 96, 392, 198);
+        layoutKnob (cutoffSlider,    cutoffLabel,    { 940, 302, 90, 88 });
+        layoutKnob (resonanceSlider, resonanceLabel, { 1088, 302, 90, 88 });
+
+        envelopeGraph.setBounds (24, 436, 360, 164);
+        {
+            auto knobs = juce::Rectangle<int> (396, 448, 230, 150);
+            const int w = knobs.getWidth() / 2;
+            auto col1 = knobs.removeFromLeft (w);
+            auto col2 = knobs;
+            auto a = col1.removeFromTop (75);
+            auto d = col1;
+            auto s = col2.removeFromTop (75);
+            auto r = col2;
+            layoutKnob (attackSlider,  attackLabel,  a);
+            layoutKnob (decaySlider,   decayLabel,   d);
+            layoutKnob (sustainSlider, sustainLabel, s);
+            layoutKnob (releaseSlider, releaseLabel, r);
+        }
+
+        lfoGraph.setBounds (662, 436, 430, 164);
+        layoutKnob (lfoRateSlider,  lfoRateLabel,  { 1108, 448, 70, 150 });
+        layoutKnob (lfoDepthSlider, lfoDepthLabel, { 1188, 448, 70, 150 });
+    }
+    else
     {
-        auto knobs = juce::Rectangle<int> (438, 276, 400, 110);
-        const int w = knobs.getWidth() / 7;
-        layoutKnob (volumeSlider2,  volumeLabel2,  knobs.removeFromLeft (w));
-        layoutKnob (tuneSlider2,    tuneLabel2,    knobs.removeFromLeft (w));
-        layoutKnob (detuneSlider2,  detuneLabel2,  knobs.removeFromLeft (w));
-        layoutKnob (wtPosSlider2,   wtPosLabel2,   knobs.removeFromLeft (w));
-        layoutKnob (unisonSlider2,  unisonLabel2,  knobs.removeFromLeft (w));
-        layoutKnob (uDetuneSlider2, uDetuneLabel2, knobs.removeFromLeft (w));
-        layoutKnob (uBlendSlider2,  uBlendLabel2,  knobs);
+        matrixSrcHeader.setBounds (40, 88, 180, 14);
+        matrixDstHeader.setBounds (230, 88, 200, 14);
+        matrixAmtHeader.setBounds (440, 88, 100, 14);
+        matrixBipHeader.setBounds (550, 88, 50, 14);
+        matrixSrcHeader2.setBounds (660, 88, 180, 14);
+        matrixDstHeader2.setBounds (850, 88, 200, 14);
+        matrixAmtHeader2.setBounds (1060, 88, 100, 14);
+        matrixBipHeader2.setBounds (1170, 88, 50, 14);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            const int col = i / 4;
+            const int row = i % 4;
+            const int x = 40 + col * 620;
+            const int y = 112 + row * 120;
+            auto& r = matrixRows[i];
+            r.src.setBounds (x, y + 36, 180, 28);
+            r.dst.setBounds (x + 190, y + 36, 200, 28);
+            r.amt.setBounds (x + 400, y + 8, 100, 88);
+            r.bip.setBounds (x + 510, y + 36, 50, 28);
+        }
     }
-
-    filterDisplay.setBounds (864, 96, 392, 198);
-    layoutKnob (cutoffSlider,    cutoffLabel,    { 940, 302, 90, 88 });
-    layoutKnob (resonanceSlider, resonanceLabel, { 1088, 302, 90, 88 });
-
-    envelopeGraph.setBounds (24, 436, 360, 164);
-    {
-        auto knobs = juce::Rectangle<int> (396, 448, 230, 150);
-        const int w = knobs.getWidth() / 2;
-        auto col1 = knobs.removeFromLeft (w);
-        auto col2 = knobs;
-        auto a = col1.removeFromTop (75);
-        auto d = col1;
-        auto s = col2.removeFromTop (75);
-        auto r = col2;
-        layoutKnob (attackSlider,  attackLabel,  a);
-        layoutKnob (decaySlider,   decayLabel,   d);
-        layoutKnob (sustainSlider, sustainLabel, s);
-        layoutKnob (releaseSlider, releaseLabel, r);
-    }
-
-    lfoGraph.setBounds (662, 436, 330, 164);
-    lfoTargetLabel.setBounds (1008, 436, 140, 14);
-    lfoTargetSelector.setBounds (1008, 452, 140, 24);
-    layoutKnob (lfoRateSlider,  lfoRateLabel,  { 1008, 488, 70, 112 });
-    layoutKnob (lfoDepthSlider, lfoDepthLabel, { 1088, 488, 70, 112 });
 
     voiceModeLabel.setBounds (16, 632, 88, 14);
     voiceModeSelector.setBounds (16, 648, 88, 24);

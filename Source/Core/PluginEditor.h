@@ -22,9 +22,15 @@ private:
     void refreshDisplays();
     void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds) const;
     void drawBadge (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& text, juce::Colour colour) const;
+    void setEditorPage (int page);
+    void applyEditorPageVisibility();
 
     CortexiaAudioProcessor& audioProcessor;
     ModernLookAndFeel customLookAndFeel;
+    int editorPage = 0;
+
+    juce::TextButton oscPageButton { "OSC" };
+    juce::TextButton matrixPageButton { "MATRIX" };
 
     juce::Slider masterVolSlider;
     juce::Label masterVolLabel;
@@ -56,7 +62,6 @@ private:
     juce::Slider cutoffSlider;    juce::Label cutoffLabel;    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     juce::Slider resonanceSlider; juce::Label resonanceLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
 
-    juce::ComboBox lfoTargetSelector; juce::Label lfoTargetLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoTargetAttachment;
     juce::Slider lfoRateSlider;       juce::Label lfoRateLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoRateAttachment;
     juce::Slider lfoDepthSlider;      juce::Label lfoDepthLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
 
@@ -77,6 +82,20 @@ private:
 
     juce::Slider modWheelSlider;
     juce::Label modWheelLabel;
+
+    struct MatrixRowUi
+    {
+        juce::ComboBox src, dst;
+        juce::Slider amt;
+        juce::Label amtLabel;
+        juce::ToggleButton bip;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttachment, dstAttachment;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> amtAttachment;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bipAttachment;
+    };
+    MatrixRowUi matrixRows[8];
+    juce::Label matrixSrcHeader, matrixDstHeader, matrixAmtHeader, matrixBipHeader;
+    juce::Label matrixSrcHeader2, matrixDstHeader2, matrixAmtHeader2, matrixBipHeader2;
 
     WaveformDisplay waveDisplay1, waveDisplay2;
     FilterResponseDisplay filterDisplay;

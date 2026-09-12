@@ -67,6 +67,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("SUSTAIN", "Sustain", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.8f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("RELEASE", "Release", juce::NormalisableRange<float> (0.01f, 5.0f, 0.01f), 0.4f));
 
+    const juce::StringArray srcNames { "None", "LFO 1", "Env 1", "Vel", "ModWheel", "Keytrack" };
+    const juce::StringArray dstNames { "None", "Cutoff", "Osc1 Pitch", "Osc2 Pitch", "Osc1 Vol", "Osc2 Vol", "Osc1 WT", "Osc2 WT", "Master" };
+
+    for (int i = 1; i <= ModSlotPack::kNumSlots; ++i)
+    {
+        const juce::String n = juce::String (i);
+        const int defaultSrc = (i == 1) ? 1 : 0;
+        const int defaultDst = (i == 1) ? 1 : 0;
+        params.push_back (std::make_unique<juce::AudioParameterChoice> ("MTX" + n + "_SRC", "Matrix " + n + " Source", srcNames, defaultSrc));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> ("MTX" + n + "_DST", "Matrix " + n + " Dest", dstNames, defaultDst));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> ("MTX" + n + "_AMT", "Matrix " + n + " Amount",
+                                                                      juce::NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f));
+        params.push_back (std::make_unique<juce::AudioParameterBool> ("MTX" + n + "_BIP", "Matrix " + n + " Bipolar", false));
+    }
+
     return { params.begin(), params.end() };
 }
 
@@ -156,21 +171,30 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto resonance = apvts.getRawParameterValue ("RESONANCE")->load();
     auto lfoRate = apvts.getRawParameterValue ("LFO_RATE")->load();
     auto lfoDepth = apvts.getRawParameterValue ("LFO_DEPTH")->load();
-    auto lfoTarget = static_cast<int>(apvts.getRawParameterValue ("LFO_TARGET")->load());
-    
+
     juce::ADSR::Parameters adsrParams;
     adsrParams.attack = apvts.getRawParameterValue ("ATTACK")->load();
     adsrParams.decay = apvts.getRawParameterValue ("DECAY")->load();
     adsrParams.sustain = apvts.getRawParameterValue ("SUSTAIN")->load();
     adsrParams.release = apvts.getRawParameterValue ("RELEASE")->load();
 
+    ModSlotPack matrix;
+    for (int i = 0; i < ModSlotPack::kNumSlots; ++i)
+    {
+        const juce::String n = juce::String (i + 1);
+        matrix.slots[i].source = (ModSource) (int) apvts.getRawParameterValue ("MTX" + n + "_SRC")->load();
+        matrix.slots[i].dest = (ModDest) (int) apvts.getRawParameterValue ("MTX" + n + "_DST")->load();
+        matrix.slots[i].amount = apvts.getRawParameterValue ("MTX" + n + "_AMT")->load();
+        matrix.slots[i].bipolar = apvts.getRawParameterValue ("MTX" + n + "_BIP")->load() > 0.5f;
+    }
+
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
         if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
             voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1,
                                      waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2,
-                                     adsrParams, cutoff, resonance, lfoRate, lfoDepth, lfoTarget, masterVol,
-                                     bendRange, lastPitchWheel, lastModWheel.load());
+                                     adsrParams, cutoff, resonance, lfoRate, lfoDepth, masterVol,
+                                     bendRange, lastPitchWheel, lastModWheel.load(), matrix);
     }
 
     synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());

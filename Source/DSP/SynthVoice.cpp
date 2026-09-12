@@ -10,6 +10,7 @@ bool SynthVoice::canPlaySound (juce::SynthesiserSound* sound)
 
 void SynthVoice::startNote (int midiNoteNumber, float velocity, juce::SynthesiserSound*, int)
 {
+    currentMidiNote = midiNoteNumber;
     targetHz = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
     const bool glide = portaSec > 1.0e-4f && alwaysGlide && lastGlideHz > 1.0;
     playingHz = glide ? lastGlideHz : targetHz;
@@ -29,9 +30,10 @@ void SynthVoice::setVoicing (float portaSeconds, bool always, double lastHz)
     lastGlideHz = lastHz;
 }
 
-void SynthVoice::retriggerPitch (double newHz, bool retriggerEnv)
+void SynthVoice::retriggerPitch (int midiNote, bool retriggerEnv)
 {
-    targetHz = newHz;
+    currentMidiNote = midiNote;
+    targetHz = juce::MidiMessage::getMidiNoteInHertz (midiNote);
     const bool glide = portaSec > 1.0e-4f;
     if (! glide)
         playingHz = targetHz;
@@ -80,8 +82,9 @@ void SynthVoice::prepareToPlay (double sampleRate, int)
 void SynthVoice::updateParameters (WaveType wave1, float gain1, float tune1, float detune1, int uni1, float uDet1, float uBlnd1, float wtPos1,
                                    WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
                                    const juce::ADSR::Parameters& params, float cutoff, float resonance,
-                                   float lfoRate, float lfoDepth, int target, float mVol,
-                                   float bendRange, int pitchWheelValue, float modWheel)
+                                   float lfoRate, float lfoDepth, float mVol,
+                                   float bendRange, int pitchWheelValue, float modWheel,
+                                   const ModSlotPack& slots)
 {
     osc1.setParameters (wave1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1);
     osc2.setParameters (wave2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2);
@@ -91,11 +94,43 @@ void SynthVoice::updateParameters (WaveType wave1, float gain1, float tune1, flo
     filterResonance = resonance;
     filterLFO.setParameters (lfoRate, currentSampleRate);
     modDepth = lfoDepth;
-    currentLfoTarget = target;
     masterVol = mVol;
+    baseWtPos1 = wtPos1;
+    baseWtPos2 = wtPos2;
     bendRangeSemitones = bendRange;
     pitchWheel = juce::jlimit (0, 16383, pitchWheelValue);
     modWheel01 = juce::jlimit (0.0f, 1.0f, modWheel);
+    matrix = slots;
+}
+
+float SynthVoice::sourceValue (ModSource source, float lfoSine, float env, bool bipolar) const
+{
+    float uni = 0.0f;
+
+    switch (source)
+    {
+        case ModSource::Lfo1:
+            uni = (lfoSine + 1.0f) * 0.5f * modDepth;
+            if (bipolar)
+                return lfoSine * modDepth;
+            return uni;
+        case ModSource::Env1:
+            uni = env;
+            break;
+        case ModSource::Vel:
+            uni = noteVelocity;
+            break;
+        case ModSource::ModWheel:
+            uni = modWheel01;
+            break;
+        case ModSource::Keytrack:
+            uni = (float) juce::jlimit (0, 127, currentMidiNote) / 127.0f;
+            break;
+        default:
+            return 0.0f;
+    }
+
+    return bipolar ? (uni * 2.0f - 1.0f) : uni;
 }
 
 void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples)
@@ -106,21 +141,45 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int st
     {
         if (currentSampleRate <= 0.0) break;
 
-        float lfoVal = filterLFO.getNextSample();
-        float modulationAmount = lfoVal * modDepth;
+        const float lfoSine = filterLFO.getNextSample();
+        const float adsrValue = adsr.getNextSample();
 
-        float pitchExtra = 0.0f;
-        float modulatedCutoff = baseCutoff;
+        float cutoffContrib = 0.0f;
+        float osc1Pitch = 0.0f;
+        float osc2Pitch = 0.0f;
+        float osc1Vol = 1.0f;
+        float osc2Vol = 1.0f;
+        float wt1 = baseWtPos1;
+        float wt2 = baseWtPos2;
+        float masterMul = 1.0f;
 
-        switch (currentLfoTarget)
+        for (int i = 0; i < ModSlotPack::kNumSlots; ++i)
         {
-            case 1:
-                modulatedCutoff = baseCutoff + (modulationAmount * baseCutoff);
-                break;
-            case 2:
-                pitchExtra = modulationAmount * 12.0f;
-                break;
+            const auto& slot = matrix.slots[i];
+            if (slot.source == ModSource::None || slot.dest == ModDest::None)
+                continue;
+            if (std::abs (slot.amount) < 1.0e-5f)
+                continue;
+
+            const float contrib = sourceValue (slot.source, lfoSine, adsrValue, slot.bipolar) * slot.amount;
+
+            switch (slot.dest)
+            {
+                case ModDest::Cutoff:    cutoffContrib += contrib; break;
+                case ModDest::Osc1Pitch: osc1Pitch += contrib * 12.0f; break;
+                case ModDest::Osc2Pitch: osc2Pitch += contrib * 12.0f; break;
+                case ModDest::Osc1Vol:   osc1Vol *= juce::jmax (0.0f, 1.0f + contrib); break;
+                case ModDest::Osc2Vol:   osc2Vol *= juce::jmax (0.0f, 1.0f + contrib); break;
+                case ModDest::Osc1Wt:    wt1 += contrib; break;
+                case ModDest::Osc2Wt:    wt2 += contrib; break;
+                case ModDest::Master:    masterMul *= juce::jmax (0.0f, 1.0f + contrib); break;
+                default: break;
+            }
         }
+
+        const float modulatedCutoff = juce::jlimit (20.0f, 20000.0f, baseCutoff * (1.0f + cutoffContrib));
+        osc1.setWtPosition (wt1);
+        osc2.setWtPosition (wt2);
 
         const float bendNorm = (float) (pitchWheel - 8192) / 8192.0f;
 
@@ -141,15 +200,16 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int st
 
         float osc1L = 0.0f, osc1R = 0.0f;
         float osc2L = 0.0f, osc2R = 0.0f;
-        osc1.processNextSample (bentPitch, pitchExtra, osc1L, osc1R);
-        osc2.processNextSample (bentPitch, 0.0f, osc2L, osc2R);
+        osc1.processNextSample (bentPitch, osc1Pitch, osc1L, osc1R);
+        osc2.processNextSample (bentPitch, osc2Pitch, osc2L, osc2R);
 
-        float sampleL = osc1L + osc2L;
-        float sampleR = osc1R + osc2R;
+        osc1L *= osc1Vol;
+        osc1R *= osc1Vol;
+        osc2L *= osc2Vol;
+        osc2R *= osc2Vol;
 
-        float adsrValue = adsr.getNextSample();
-        sampleL *= noteVelocity * adsrValue * masterVol;
-        sampleR *= noteVelocity * adsrValue * masterVol;
+        float sampleL = (osc1L + osc2L) * noteVelocity * adsrValue * masterVol * masterMul;
+        float sampleR = (osc1R + osc2R) * noteVelocity * adsrValue * masterVol * masterMul;
 
         filterL.setParams (modulatedCutoff, filterResonance, currentSampleRate);
         filterR.setParams (modulatedCutoff, filterResonance, currentSampleRate);
