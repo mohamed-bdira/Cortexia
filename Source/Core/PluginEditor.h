@@ -75,6 +75,9 @@ private:
     juce::Label alwaysGlideLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> alwaysGlideAttachment;
 
+    juce::Slider modWheelSlider;
+    juce::Label modWheelLabel;
+
     WaveformDisplay waveDisplay1, waveDisplay2;
     FilterResponseDisplay filterDisplay;
     EnvelopeGraph envelopeGraph;

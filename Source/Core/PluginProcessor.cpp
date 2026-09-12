@@ -14,6 +14,11 @@ CortexiaAudioProcessor::CortexiaAudioProcessor()
 
 CortexiaAudioProcessor::~CortexiaAudioProcessor() {}
 
+void CortexiaAudioProcessor::setModWheel01 (float value)
+{
+    lastModWheel.store (juce::jlimit (0.0f, 1.0f, value));
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -112,6 +117,14 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         const auto msg = metadata.getMessage();
         if (msg.isPitchWheel())
             lastPitchWheel = msg.getPitchWheelValue();
+        else if (msg.isController())
+        {
+            const float n = juce::jlimit (0.0f, 1.0f, (float) msg.getControllerValue() / 127.0f);
+            if (msg.getControllerNumber() == 1)
+                lastModWheel.store (n);
+            else if (msg.getControllerNumber() == 11)
+                lastExpression.store (n);
+        }
     }
 
     auto masterVol = apvts.getRawParameterValue ("MASTER_VOL")->load();
@@ -157,7 +170,7 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1,
                                      waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2,
                                      adsrParams, cutoff, resonance, lfoRate, lfoDepth, lfoTarget, masterVol,
-                                     bendRange, lastPitchWheel);
+                                     bendRange, lastPitchWheel, lastModWheel.load());
     }
 
     synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());

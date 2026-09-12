@@ -31,6 +31,10 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;
     std::atomic<juce::AudioVisualiserComponent*> visualizer { nullptr };
+    std::atomic<float> lastModWheel { 0.0f };
+    std::atomic<float> lastExpression { 0.0f };
+
+    void setModWheel01 (float value);
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
