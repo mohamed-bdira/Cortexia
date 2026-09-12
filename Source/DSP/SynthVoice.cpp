@@ -58,7 +58,14 @@ void SynthVoice::pitchWheelMoved (int newPitchWheelValue)
     pitchWheel = juce::jlimit (0, 16383, newPitchWheelValue);
 }
 
-void SynthVoice::controllerMoved (int, int) {}
+void SynthVoice::controllerMoved (int controllerNumber, int controllerValue)
+{
+    const float n = juce::jlimit (0.0f, 1.0f, (float) controllerValue / 127.0f);
+    if (controllerNumber == 1)
+        modWheel01 = n;
+    else if (controllerNumber == 11)
+        expression01 = n;
+}
 
 void SynthVoice::prepareToPlay (double sampleRate, int)
 {
@@ -74,7 +81,7 @@ void SynthVoice::updateParameters (WaveType wave1, float gain1, float tune1, flo
                                    WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
                                    const juce::ADSR::Parameters& params, float cutoff, float resonance,
                                    float lfoRate, float lfoDepth, int target, float mVol,
-                                   float bendRange, int pitchWheelValue)
+                                   float bendRange, int pitchWheelValue, float modWheel)
 {
     osc1.setParameters (wave1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1);
     osc2.setParameters (wave2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2);
@@ -88,6 +95,7 @@ void SynthVoice::updateParameters (WaveType wave1, float gain1, float tune1, flo
     masterVol = mVol;
     bendRangeSemitones = bendRange;
     pitchWheel = juce::jlimit (0, 16383, pitchWheelValue);
+    modWheel01 = juce::jlimit (0.0f, 1.0f, modWheel);
 }
 
 void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples)

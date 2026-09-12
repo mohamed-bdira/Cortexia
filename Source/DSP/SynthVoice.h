@@ -26,7 +26,7 @@ public:
                            WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
                            const juce::ADSR::Parameters& params, float cutoff, float resonance,
                            float lfoRate, float lfoDepth, int target, float mVol,
-                           float bendRange, int pitchWheelValue);
+                           float bendRange, int pitchWheelValue, float modWheel);
 
     void setVoicing (float portaSeconds, bool alwaysGlide, double lastGlideHz);
     void retriggerPitch (double newHz, bool retriggerEnv);
@@ -56,4 +56,6 @@ private:
     double lastGlideHz = 0.0;
     float portaSec = 0.0f;
     bool alwaysGlide = false;
+    float modWheel01 = 0.0f;
+    float expression01 = 0.0f;
 };

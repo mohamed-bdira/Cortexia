@@ -123,6 +123,14 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     alwaysGlideAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
         audioProcessor.apvts, "ALWAYS_GLIDE", alwaysGlideButton);
 
+    setupKnob (modWheelSlider, modWheelLabel, "MW", colOsc);
+    modWheelSlider.setRange (0.0, 1.0, 0.01);
+    modWheelSlider.setValue (audioProcessor.lastModWheel.load(), juce::dontSendNotification);
+    modWheelSlider.onValueChange = [this]
+    {
+        audioProcessor.setModWheel01 ((float) modWheelSlider.getValue());
+    };
+
     waveDisplay1.setAccentColour (colOsc);
     waveDisplay2.setAccentColour (colOscB);
     addAndMakeVisible (waveDisplay1);
@@ -200,6 +208,8 @@ void CortexiaAudioProcessorEditor::refreshDisplays()
 void CortexiaAudioProcessorEditor::timerCallback()
 {
     refreshDisplays();
+    if (! modWheelSlider.isMouseButtonDown())
+        modWheelSlider.setValue (audioProcessor.lastModWheel.load(), juce::dontSendNotification);
 }
 
 void CortexiaAudioProcessorEditor::drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds) const
@@ -331,5 +341,6 @@ void CortexiaAudioProcessorEditor::resized()
     alwaysGlideLabel.setBounds (180, 632, 56, 14);
     alwaysGlideButton.setBounds (180, 648, 56, 24);
 
-    keyboard.setBounds (252, 628, 1016, 80);
+    keyboard.setBounds (252, 628, 944, 80);
+    layoutKnob (modWheelSlider, modWheelLabel, { 1208, 628, 60, 80 });
 }

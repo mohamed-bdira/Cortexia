@@ -78,7 +78,7 @@ flowchart LR
 
 Polyphony: **8** voices. Modes **Poly / Mono / Legato**, portamento 0–2 s, **Always** glide. One `SynthSound` accepts all notes/channels.
 
-Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2) on the gliding pitch. Other CCs are still stubbed.
+Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2) on the gliding pitch. CC1 (mod wheel) and CC11 (expression) are stored 0–1 on the processor/voices for the future matrix; they do not modulate anything yet. On-screen **MW** knob writes the same CC1 value.
 
 ---
 
@@ -146,7 +146,7 @@ Editor size: **1280 × 720**. Mockup-inspired dark navy (`#0a0e14` → `#0d1218`
 | Filter | teal | LP response curve from cutoff/Q, Cutoff + Res knobs |
 | Envelope | `#4ade80` | ADSR shape graph + Attack/Decay/Sustain/Release |
 | LFO | `#e879f9` | Sine graph (depth), Rate, Depth, Target |
-| Keyboard | — | Voicing (MODE / PORTA / ALWAYS) + on-screen MIDI (C1–C6) |
+| Keyboard | — | Voicing (MODE / PORTA / ALWAYS), keys (C1–C6), **MW** readout/wheel |
 
 `WaveformDisplay` samples mip 0 of `AnalogWavetableBank`. Knobs: thin 2.5 px arcs, dark caps. Combos are dark pills (not overlaid on the wave).
 
