@@ -86,3 +86,24 @@ juce::Font ModernLookAndFeel::getLabelFont (juce::Label&)
 {
     return juce::Font { juce::FontOptions (10.0f) };
 }
+
+void ModernLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                                          bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+    const bool on = button.getToggleState();
+    auto fill = on ? juce::Colour (0xff2ee6c8).withAlpha (0.22f) : juce::Colour (0xff0e141c);
+    if (shouldDrawButtonAsDown)
+        fill = fill.brighter (0.08f);
+    else if (shouldDrawButtonAsHighlighted)
+        fill = fill.brighter (0.05f);
+
+    g.setColour (fill);
+    g.fillRoundedRectangle (bounds, 4.0f);
+    g.setColour (on ? juce::Colour (0xff2ee6c8) : juce::Colour (0xff1c2430));
+    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
+
+    g.setColour (on ? juce::Colour (0xffe8edf4) : juce::Colour (0xff7a8599));
+    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.drawText (button.getButtonText(), bounds, juce::Justification::centred);
+}

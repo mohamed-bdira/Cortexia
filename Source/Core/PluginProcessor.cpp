@@ -20,6 +20,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
 
     // MASTER
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("MASTER_VOL", "Master Volume", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.8f));
+    params.push_back (std::make_unique<juce::AudioParameterInt> ("BEND_RANGE", "Bend Range", 0, 24, 2));
+    params.push_back (std::make_unique<juce::AudioParameterChoice> ("VOICE_MODE", "Voice Mode",
+                                                                   juce::StringArray { "Poly", "Mono", "Legato" }, 0));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("PORTA", "Portamento",
+                                                                  juce::NormalisableRange<float> (0.0f, 2.0f, 0.001f, 0.4f), 0.0f));
+    params.push_back (std::make_unique<juce::AudioParameterBool> ("ALWAYS_GLIDE", "Always Glide", false));
 
     // OSC 1 PARAMETERS
     params.push_back (std::make_unique<juce::AudioParameterChoice> ("OSC", "Osc 1 Waveform", juce::StringArray { "Sine", "Sawtooth", "Square", "Triangle" }, 1));
@@ -101,7 +107,19 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     keyboardState.processNextMidiBuffer (midiMessages, 0, buffer.getNumSamples(), true);
 
+    for (const auto metadata : midiMessages)
+    {
+        const auto msg = metadata.getMessage();
+        if (msg.isPitchWheel())
+            lastPitchWheel = msg.getPitchWheelValue();
+    }
+
     auto masterVol = apvts.getRawParameterValue ("MASTER_VOL")->load();
+    auto bendRange = apvts.getRawParameterValue ("BEND_RANGE")->load();
+    auto voiceMode = (VoiceMode) (int) apvts.getRawParameterValue ("VOICE_MODE")->load();
+    auto portaSec = apvts.getRawParameterValue ("PORTA")->load();
+    auto alwaysGlide = apvts.getRawParameterValue ("ALWAYS_GLIDE")->load() > 0.5f;
+    synth.setVoicing (voiceMode, portaSec, alwaysGlide);
 
     auto waveType1 = (WaveType) apvts.getRawParameterValue ("OSC")->load();
     auto gain1 = apvts.getRawParameterValue ("VOLUME")->load();
@@ -138,7 +156,8 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
             voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1,
                                      waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2,
-                                     adsrParams, cutoff, resonance, lfoRate, lfoDepth, lfoTarget, masterVol);
+                                     adsrParams, cutoff, resonance, lfoRate, lfoDepth, lfoTarget, masterVol,
+                                     bendRange, lastPitchWheel);
     }
 
     synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());

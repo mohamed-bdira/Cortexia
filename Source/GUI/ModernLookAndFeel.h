@@ -18,4 +18,7 @@ public:
 
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     juce::Font getLabelFont (juce::Label&) override;
+
+    void drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 };
