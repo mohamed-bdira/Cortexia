@@ -29,6 +29,9 @@ private:
     juce::Slider masterVolSlider;
     juce::Label masterVolLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolAttachment;
+    juce::Slider bendRangeSlider;
+    juce::Label bendRangeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bendRangeAttachment;
 
     juce::ComboBox waveSelector1;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveAttachment1;
@@ -61,6 +64,16 @@ private:
     juce::Slider decaySlider;   juce::Label decayLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
     juce::Slider sustainSlider; juce::Label sustainLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;
     juce::Slider releaseSlider; juce::Label releaseLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
+
+    juce::ComboBox voiceModeSelector;
+    juce::Label voiceModeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> voiceModeAttachment;
+    juce::Slider portaSlider;
+    juce::Label portaLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> portaAttachment;
+    juce::ToggleButton alwaysGlideButton;
+    juce::Label alwaysGlideLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> alwaysGlideAttachment;
 
     WaveformDisplay waveDisplay1, waveDisplay2;
     FilterResponseDisplay filterDisplay;

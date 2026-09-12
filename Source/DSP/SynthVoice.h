@@ -25,7 +25,11 @@ public:
     void updateParameters (WaveType wave1, float gain1, float tune1, float detune1, int uni1, float uDet1, float uBlnd1, float wtPos1,
                            WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
                            const juce::ADSR::Parameters& params, float cutoff, float resonance,
-                           float lfoRate, float lfoDepth, int target, float mVol);
+                           float lfoRate, float lfoDepth, int target, float mVol,
+                           float bendRange, int pitchWheelValue);
+
+    void setVoicing (float portaSeconds, bool alwaysGlide, double lastGlideHz);
+    void retriggerPitch (double newHz, bool retriggerEnv);
 
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override;
 
@@ -44,4 +48,12 @@ private:
     float filterResonance = 0.707f;
     float modDepth = 0.0f;
     int currentLfoTarget = 1;
+    float bendRangeSemitones = 2.0f;
+    int pitchWheel = 8192;
+
+    double playingHz = 440.0;
+    double targetHz = 440.0;
+    double lastGlideHz = 0.0;
+    float portaSec = 0.0f;
+    bool alwaysGlide = false;
 };

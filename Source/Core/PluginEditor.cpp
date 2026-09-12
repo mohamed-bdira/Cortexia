@@ -21,6 +21,8 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
 
     setupKnob (masterVolSlider, masterVolLabel, "MASTER", colOsc);
     masterVolAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "MASTER_VOL", masterVolSlider);
+    setupKnob (bendRangeSlider, bendRangeLabel, "BEND", colOsc);
+    bendRangeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "BEND_RANGE", bendRangeSlider);
 
     auto setupWaveCombo = [this] (juce::ComboBox& box)
     {
@@ -96,6 +98,31 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     setupKnob (releaseSlider, releaseLabel, "RELEASE", colEnv);
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "RELEASE", releaseSlider);
 
+    voiceModeLabel.setText ("MODE", juce::dontSendNotification);
+    voiceModeLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    voiceModeLabel.setJustificationType (juce::Justification::centred);
+    voiceModeLabel.setColour (juce::Label::textColourId, colMute);
+    addAndMakeVisible (voiceModeLabel);
+    voiceModeSelector.addItemList ({ "Poly", "Mono", "Legato" }, 1);
+    voiceModeSelector.setLookAndFeel (&customLookAndFeel);
+    addAndMakeVisible (voiceModeSelector);
+    voiceModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        audioProcessor.apvts, "VOICE_MODE", voiceModeSelector);
+
+    setupKnob (portaSlider, portaLabel, "PORTA", colOsc);
+    portaAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "PORTA", portaSlider);
+
+    alwaysGlideLabel.setText ("ALWAYS", juce::dontSendNotification);
+    alwaysGlideLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    alwaysGlideLabel.setJustificationType (juce::Justification::centred);
+    alwaysGlideLabel.setColour (juce::Label::textColourId, colMute);
+    addAndMakeVisible (alwaysGlideLabel);
+    alwaysGlideButton.setButtonText ({});
+    alwaysGlideButton.setClickingTogglesState (true);
+    addAndMakeVisible (alwaysGlideButton);
+    alwaysGlideAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        audioProcessor.apvts, "ALWAYS_GLIDE", alwaysGlideButton);
+
     waveDisplay1.setAccentColour (colOsc);
     waveDisplay2.setAccentColour (colOscB);
     addAndMakeVisible (waveDisplay1);
@@ -132,6 +159,7 @@ CortexiaAudioProcessorEditor::~CortexiaAudioProcessorEditor()
     waveSelector1.setLookAndFeel (nullptr);
     waveSelector2.setLookAndFeel (nullptr);
     lfoTargetSelector.setLookAndFeel (nullptr);
+    voiceModeSelector.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -234,13 +262,14 @@ void CortexiaAudioProcessorEditor::paint (juce::Graphics& g)
     drawBadge (g, { filt.getX() + 88.0f, filt.getY() + 11.0f, 42.0f, 16.0f }, "LP", colFilt);
 
     g.setColour (juce::Colour (0xff1c2430));
-    g.drawRoundedRectangle (980.0f, 10.0f, 210.0f, 36.0f, 5.0f, 1.0f);
+    g.drawRoundedRectangle (960.0f, 10.0f, 168.0f, 36.0f, 5.0f, 1.0f);
 }
 
 void CortexiaAudioProcessorEditor::resized()
 {
-    oscilloscope.setBounds (981, 11, 208, 34);
-    layoutKnob (masterVolSlider, masterVolLabel, { 1200, 4, 64, 72 });
+    oscilloscope.setBounds (961, 11, 166, 34);
+    layoutKnob (bendRangeSlider, bendRangeLabel, { 1136, 4, 64, 72 });
+    layoutKnob (masterVolSlider, masterVolLabel, { 1208, 4, 64, 72 });
 
     waveSelector1.setBounds (270, 66, 140, 24);
     waveDisplay1.setBounds (24, 100, 388, 168);
@@ -296,5 +325,11 @@ void CortexiaAudioProcessorEditor::resized()
     layoutKnob (lfoRateSlider,  lfoRateLabel,  { 1008, 488, 70, 112 });
     layoutKnob (lfoDepthSlider, lfoDepthLabel, { 1088, 488, 70, 112 });
 
-    keyboard.setBounds (12, 628, 1256, 80);
+    voiceModeLabel.setBounds (16, 632, 88, 14);
+    voiceModeSelector.setBounds (16, 648, 88, 24);
+    layoutKnob (portaSlider, portaLabel, { 112, 628, 64, 80 });
+    alwaysGlideLabel.setBounds (180, 632, 56, 14);
+    alwaysGlideButton.setBounds (180, 648, 56, 24);
+
+    keyboard.setBounds (252, 628, 1016, 80);
 }

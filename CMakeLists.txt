@@ -46,6 +46,8 @@ target_sources(Cortexia PRIVATE
     Source/DSP/StateVariableFilter.h
     Source/DSP/SynthVoice.cpp
     Source/DSP/SynthVoice.h
+    Source/DSP/CortexiaSynth.cpp
+    Source/DSP/CortexiaSynth.h
 
     # GUI
     Source/GUI/ModernLookAndFeel.cpp
@@ -107,6 +109,8 @@ target_sources(CortexiaFX PRIVATE
     Source/DSP/StateVariableFilter.h
     Source/DSP/SynthVoice.cpp
     Source/DSP/SynthVoice.h
+    Source/DSP/CortexiaSynth.cpp
+    Source/DSP/CortexiaSynth.h
 
     # GUI
     Source/GUI/ModernLookAndFeel.cpp

@@ -31,15 +31,16 @@ Existing one-line vision in [`README.md`](README.md): Serum-like, plus possible 
 ```
 Source/
   Core/     PluginProcessor, PluginEditor
-  DSP/      Wavetable, Oscillator, SynthVoice, LFO, StateVariableFilter
+  DSP/      Wavetable, Oscillator, SynthVoice, CortexiaSynth, LFO, StateVariableFilter
   GUI/      ModernLookAndFeel, WaveformDisplay (plus filter/env/LFO graphs)
 ```
 
 | File | Role |
 |---|---|
-| [`Source/Core/PluginProcessor.h`](Source/Core/PluginProcessor.h) / [`.cpp`](Source/Core/PluginProcessor.cpp) | APVTS parameters, 8-voice `juce::Synthesiser`, `processBlock`, state XML, visualizer pointer |
-| [`Source/Core/PluginEditor.h`](Source/Core/PluginEditor.h) / [`.cpp`](Source/Core/PluginEditor.cpp) | 1000×650 UI, knobs, waveform drawings, oscilloscope |
-| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: two `Oscillator`s, ADSR, stereo SVF, LFO routing |
+| [`Source/Core/PluginProcessor.h`](Source/Core/PluginProcessor.h) / [`.cpp`](Source/Core/PluginProcessor.cpp) | APVTS parameters, 8-voice `CortexiaSynthesiser`, `processBlock`, state XML, visualizer pointer |
+| [`Source/Core/PluginEditor.h`](Source/Core/PluginEditor.h) / [`.cpp`](Source/Core/PluginEditor.cpp) | 1280×720 UI, knobs, waveform drawings, oscilloscope, voicing strip |
+| [`Source/DSP/CortexiaSynth.h`](Source/DSP/CortexiaSynth.h) / [`.cpp`](Source/DSP/CortexiaSynth.cpp) | Poly vs mono/legato MIDI, note stack, porta/Always flags |
+| [`Source/DSP/SynthVoice.h`](Source/DSP/SynthVoice.h) / [`.cpp`](Source/DSP/SynthVoice.cpp) | Live voice: two `Oscillator`s, ADSR, stereo SVF, LFO routing, porta glide |
 | [`Source/DSP/Oscillator.h`](Source/DSP/Oscillator.h) / [`.cpp`](Source/DSP/Oscillator.cpp) | Live osc: unison + wavetable playback |
 | [`Source/DSP/Wavetable.h`](Source/DSP/Wavetable.h) / [`.cpp`](Source/DSP/Wavetable.cpp) | 2048-sample frames, 8 mips, analog Fourier bank |
 | [`Source/DSP/LFO.h`](Source/DSP/LFO.h) / [`.cpp`](Source/DSP/LFO.cpp) | Sine LFO |
@@ -55,7 +56,7 @@ Old flat files (`Source/PluginProcessor.*`, `Source/pluginEditor.h`) were moved 
 
 ```mermaid
 flowchart LR
-  MIDI --> Synth["juce::Synthesiser 8 voices"]
+  MIDI --> Synth["CortexiaSynthesiser 8 voices"]
   Synth --> Voice[SynthVoice]
   Voice --> Osc1["Osc 1 wavetable + unison"]
   Voice --> Osc2["Osc 2 wavetable + unison"]
@@ -75,9 +76,9 @@ flowchart LR
 3. LFO is per-voice sine. Target `None` (0), `Cutoff` (1), or `Pitch 1` (2). Cutoff modulation is `baseCutoff * (1 + lfo * depth)`. Pitch 1 adds up to ±12 semitones at full depth.
 4. Mixer-down of L/R is pushed to the editor oscilloscope if the editor is open (`std::atomic` pointer; cleared in the editor destructor).
 
-Polyphony: **8** voices. One `SynthSound` accepts all notes/channels.
+Polyphony: **8** voices. Modes **Poly / Mono / Legato**, portamento 0–2 s, **Always** glide. One `SynthSound` accepts all notes/channels.
 
-Pitch wheel and MIDI CCs are stubbed (empty).
+Pitch wheel and MIDI CCs: pitch bend is live (`BEND_RANGE` 0–24 st, default 2) on the gliding pitch. Other CCs are still stubbed.
 
 ---
 
@@ -113,6 +114,10 @@ State is XML via `getStateInformation` / `setStateInformation`. Hosts can save/r
 | ID | UI | Default |
 |---|---|---|
 | `MASTER_VOL` | Master | 0.80 |
+| `BEND_RANGE` | Bend (semitones) | 2 |
+| `VOICE_MODE` | Poly / Mono / Legato | Poly |
+| `PORTA` | Portamento (seconds) | 0 |
+| `ALWAYS_GLIDE` | Always glide | off |
 | `OSC` | Osc 1 waveform | Sawtooth |
 | `VOLUME` | Osc 1 Vol | 0.50 |
 | `TUNE1` / `DETUNE1` | Tune / Detune | 0 |
@@ -136,12 +141,12 @@ Editor size: **1280 × 720**. Mockup-inspired dark navy (`#0a0e14` → `#0d1218`
 
 | Panel | Accent | Contents |
 |---|---|---|
-| Header | teal | Left/center **CORTEXIA**, subtitle **SPECTRAL SYNTHESIZER**, scope + master |
+| Header | teal | **CORTEXIA**, **SPECTRAL SYNTHESIZER**, scope, **BEND** range, master |
 | OSC A / OSC B | `#2ee6c8` / `#38bdf8` | Wavetable badge, shape combo, live table preview (stacked strokes), 7 knobs |
 | Filter | teal | LP response curve from cutoff/Q, Cutoff + Res knobs |
 | Envelope | `#4ade80` | ADSR shape graph + Attack/Decay/Sustain/Release |
 | LFO | `#e879f9` | Sine graph (depth), Rate, Depth, Target |
-| Keyboard | — | On-screen MIDI (C1–C6) into the synth |
+| Keyboard | — | Voicing (MODE / PORTA / ALWAYS) + on-screen MIDI (C1–C6) |
 
 `WaveformDisplay` samples mip 0 of `AnalogWavetableBank`. Knobs: thin 2.5 px arcs, dark caps. Combos are dark pills (not overlaid on the wave).
 

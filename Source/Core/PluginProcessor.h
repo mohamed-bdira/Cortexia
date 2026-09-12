@@ -1,7 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <atomic>
-#include "DSP/SynthVoice.h" // Includes our new modularized DSP components
+#include "DSP/CortexiaSynth.h"
 
 class CortexiaAudioProcessor  : public juce::AudioProcessor
 {
@@ -34,7 +34,8 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    juce::Synthesiser synth;
+    CortexiaSynthesiser synth;
+    int lastPitchWheel = 8192;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CortexiaAudioProcessor)
 };
