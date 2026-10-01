@@ -32,6 +32,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
                                                                   juce::NormalisableRange<float> (0.0f, 2.0f, 0.001f, 0.4f), 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("ALWAYS_GLIDE", "Always Glide", false));
 
+    for (int i = 1; i <= 4; ++i)
+        params.push_back (std::make_unique<juce::AudioParameterFloat> ("MACRO" + juce::String (i), "Macro " + juce::String (i),
+                                                                       juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
+
     // OSC 1 PARAMETERS
     params.push_back (std::make_unique<juce::AudioParameterChoice> ("OSC", "Osc 1 Waveform", juce::StringArray { "Sine", "Sawtooth", "Square", "Triangle" }, 1));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("VOLUME", "Osc 1 Volume", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.5f));
@@ -57,9 +61,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("RESONANCE", "Resonance", juce::NormalisableRange<float> (0.707f, 10.0f, 0.01f), 0.707f));
 
     // LFO PARAMETERS
-    params.push_back (std::make_unique<juce::AudioParameterFloat> ("LFO_RATE", "LFO Rate", juce::NormalisableRange<float> (0.1f, 20.0f, 0.1f), 2.0f));
-    params.push_back (std::make_unique<juce::AudioParameterFloat> ("LFO_DEPTH", "LFO Depth", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
-    params.push_back (std::make_unique<juce::AudioParameterChoice> ("LFO_TARGET", "LFO Target", juce::StringArray { "None", "Cutoff", "Pitch 1" }, 1));
+    for (int i = 0; i < kNumLfos; ++i)
+    {
+        const juce::String name = "LFO " + juce::String (i + 1);
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (lfoParamId (i, "RATE"), name + " Rate", juce::NormalisableRange<float> (0.1f, 20.0f, 0.1f), 2.0f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (lfoParamId (i, "DEPTH"), name + " Depth", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), i == 0 ? 0.0f : 1.0f));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (lfoParamId (i, "SHAPE"), name + " Shape", lfoShapeNames(), 0));
+        params.push_back (std::make_unique<juce::AudioParameterBool> (lfoParamId (i, "RETRIG"), name + " Retrigger", true));
+        params.push_back (std::make_unique<juce::AudioParameterBool> (lfoParamId (i, "SYNC"), name + " Sync", false));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (lfoParamId (i, "DIV"), name + " Sync Division", lfoSyncDivisionNames(), 4));
+    }
 
     // ENVELOPE PARAMETERS
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("ATTACK", "Attack", juce::NormalisableRange<float> (0.01f, 3.0f, 0.01f), 0.1f));
@@ -67,14 +78,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout CortexiaAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("SUSTAIN", "Sustain", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.8f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("RELEASE", "Release", juce::NormalisableRange<float> (0.01f, 5.0f, 0.01f), 0.4f));
 
-    const juce::StringArray srcNames { "None", "LFO 1", "Env 1", "Vel", "ModWheel", "Keytrack" };
-    const juce::StringArray dstNames { "None", "Cutoff", "Osc1 Pitch", "Osc2 Pitch", "Osc1 Vol", "Osc2 Vol", "Osc1 WT", "Osc2 WT", "Master" };
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("ENV2_ATTACK", "Env2 Attack", juce::NormalisableRange<float> (0.01f, 3.0f, 0.01f), 0.01f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("ENV2_DECAY", "Env2 Decay", juce::NormalisableRange<float> (0.01f, 3.0f, 0.01f), 0.3f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("ENV2_SUSTAIN", "Env2 Sustain", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("ENV2_RELEASE", "Env2 Release", juce::NormalisableRange<float> (0.01f, 5.0f, 0.01f), 0.3f));
+
+    const auto srcNames = modSourceNames();
+    const auto dstNames = modDestNames();
 
     for (int i = 1; i <= ModSlotPack::kNumSlots; ++i)
     {
         const juce::String n = juce::String (i);
-        const int defaultSrc = (i == 1) ? 1 : 0;
-        const int defaultDst = (i == 1) ? 1 : 0;
+        const int defaultSrc = (i == 1) ? (int) ModSource::Lfo1 : (i == 2) ? (int) ModSource::Env2 : 0;
+        const int defaultDst = (i <= 2) ? (int) ModDest::Cutoff : 0;
         params.push_back (std::make_unique<juce::AudioParameterChoice> ("MTX" + n + "_SRC", "Matrix " + n + " Source", srcNames, defaultSrc));
         params.push_back (std::make_unique<juce::AudioParameterChoice> ("MTX" + n + "_DST", "Matrix " + n + " Dest", dstNames, defaultDst));
         params.push_back (std::make_unique<juce::AudioParameterFloat> ("MTX" + n + "_AMT", "Matrix " + n + " Amount",
@@ -140,6 +156,10 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             else if (msg.getControllerNumber() == 11)
                 lastExpression.store (n);
         }
+        else if (msg.isChannelPressure())
+        {
+            lastChannelPressure.store (juce::jlimit (0.0f, 1.0f, (float) msg.getChannelPressureValue() / 127.0f));
+        }
     }
 
     auto masterVol = apvts.getRawParameterValue ("MASTER_VOL")->load();
@@ -169,14 +189,47 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     auto cutoff = apvts.getRawParameterValue ("CUTOFF")->load();
     auto resonance = apvts.getRawParameterValue ("RESONANCE")->load();
-    auto lfoRate = apvts.getRawParameterValue ("LFO_RATE")->load();
-    auto lfoDepth = apvts.getRawParameterValue ("LFO_DEPTH")->load();
+
+    double bpm = 120.0;
+    if (auto* hostPlayHead = getPlayHead())
+        if (auto position = hostPlayHead->getPosition())
+            if (auto hostBpm = position->getBpm())
+                if (*hostBpm > 0.0)
+                    bpm = *hostBpm;
+
+    LfoSettings lfoSettings[kNumLfos];
+    for (int i = 0; i < kNumLfos; ++i)
+    {
+        auto& lfo = lfoSettings[i];
+        lfo.depth = apvts.getRawParameterValue (lfoParamId (i, "DEPTH"))->load();
+        lfo.shape = (LfoShape) (int) apvts.getRawParameterValue (lfoParamId (i, "SHAPE"))->load();
+        lfo.retrigger = apvts.getRawParameterValue (lfoParamId (i, "RETRIG"))->load() > 0.5f;
+        if (apvts.getRawParameterValue (lfoParamId (i, "SYNC"))->load() > 0.5f)
+        {
+            const int div = (int) apvts.getRawParameterValue (lfoParamId (i, "DIV"))->load();
+            lfo.rateHz = (float) ((bpm / 60.0) / lfoSyncDivisionBeats (div));
+        }
+        else
+        {
+            lfo.rateHz = apvts.getRawParameterValue (lfoParamId (i, "RATE"))->load();
+        }
+    }
 
     juce::ADSR::Parameters adsrParams;
     adsrParams.attack = apvts.getRawParameterValue ("ATTACK")->load();
     adsrParams.decay = apvts.getRawParameterValue ("DECAY")->load();
     adsrParams.sustain = apvts.getRawParameterValue ("SUSTAIN")->load();
     adsrParams.release = apvts.getRawParameterValue ("RELEASE")->load();
+
+    juce::ADSR::Parameters env2Params;
+    env2Params.attack = apvts.getRawParameterValue ("ENV2_ATTACK")->load();
+    env2Params.decay = apvts.getRawParameterValue ("ENV2_DECAY")->load();
+    env2Params.sustain = apvts.getRawParameterValue ("ENV2_SUSTAIN")->load();
+    env2Params.release = apvts.getRawParameterValue ("ENV2_RELEASE")->load();
+
+    float macros[4];
+    for (int i = 0; i < 4; ++i)
+        macros[i] = apvts.getRawParameterValue ("MACRO" + juce::String (i + 1))->load();
 
     ModSlotPack matrix;
     for (int i = 0; i < ModSlotPack::kNumSlots; ++i)
@@ -193,8 +246,9 @@ void CortexiaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         if (auto* voice = dynamic_cast<SynthVoice*> (synth.getVoice (i)))
             voice->updateParameters (waveType1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1,
                                      waveType2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2,
-                                     adsrParams, cutoff, resonance, lfoRate, lfoDepth, masterVol,
-                                     bendRange, lastPitchWheel, lastModWheel.load(), matrix);
+                                     adsrParams, env2Params, cutoff, resonance, lfoSettings, masterVol,
+                                     bendRange, lastPitchWheel, lastModWheel.load(),
+                                     lastExpression.load(), lastChannelPressure.load(), macros, matrix);
     }
 
     synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());

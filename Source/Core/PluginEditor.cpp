@@ -8,7 +8,16 @@ namespace
     const juce::Colour colFilt (0xff2ee6c8);
     const juce::Colour colLfo  (0xffe879f9);
     const juce::Colour colEnv  (0xff4ade80);
+    const juce::Colour colEnv2 (0xfff59e0b);
     const juce::Colour colMute (0xff7a8599);
+
+    constexpr int kModStripTop = 58;
+    constexpr int kModStripH = 130;
+    constexpr int kMatrixPanelTop = 198;
+    constexpr int kMatrixPanelH = 418;
+    constexpr int kMatrixHeaderY = kMatrixPanelTop + 10;
+    constexpr int kMatrixRowBaseY = 228;
+    constexpr int kMatrixRowStep = 100;
 }
 
 CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcessor& p)
@@ -31,6 +40,13 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
 
     setupKnob (masterVolSlider, masterVolLabel, "MASTER", colOsc);
     masterVolAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "MASTER_VOL", masterVolSlider);
+    for (int i = 0; i < 4; ++i)
+    {
+        const juce::String label = "M" + juce::String (i + 1);
+        setupKnob (macroSliders[i], macroLabels[i], label, colOsc);
+        macroAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            audioProcessor.apvts, "MACRO" + juce::String (i + 1), macroSliders[i]);
+    }
     setupKnob (bendRangeSlider, bendRangeLabel, "BEND", colOsc);
     bendRangeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "BEND_RANGE", bendRangeSlider);
 
@@ -85,9 +101,37 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     resonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "RESONANCE", resonanceSlider);
 
     setupKnob (lfoRateSlider, lfoRateLabel, "RATE", colLfo);
-    lfoRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "LFO_RATE", lfoRateSlider);
     setupKnob (lfoDepthSlider, lfoDepthLabel, "DEPTH", colLfo);
-    lfoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "LFO_DEPTH", lfoDepthSlider);
+
+    for (int i = 0; i < kNumLfos; ++i)
+    {
+        auto& b = lfoButtons[i];
+        b.setButtonText (juce::String (i + 1));
+        b.setClickingTogglesState (true);
+        b.setRadioGroupId (3);
+        b.setToggleState (i == 0, juce::dontSendNotification);
+        b.onClick = [this, i] { setLfoPage (i); };
+        addAndMakeVisible (b);
+    }
+
+    lfoShapeSelector.addItemList (lfoShapeNames(), 1);
+    lfoShapeSelector.setLookAndFeel (&customLookAndFeel);
+    addAndMakeVisible (lfoShapeSelector);
+
+    lfoDivSelector.addItemList (lfoSyncDivisionNames(), 1);
+    lfoDivSelector.setLookAndFeel (&customLookAndFeel);
+    addAndMakeVisible (lfoDivSelector);
+    lfoDivLabel.setText ("DIV", juce::dontSendNotification);
+    lfoDivLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    lfoDivLabel.setJustificationType (juce::Justification::centred);
+    lfoDivLabel.setColour (juce::Label::textColourId, colMute);
+    addAndMakeVisible (lfoDivLabel);
+
+    lfoRetrigButton.setClickingTogglesState (true);
+    lfoSyncButton.setClickingTogglesState (true);
+    addAndMakeVisible (lfoRetrigButton);
+    addAndMakeVisible (lfoSyncButton);
+    lfoSyncButton.onStateChange = [this] { updateLfoRateVisibility(); };
 
     setupKnob (attackSlider, attackLabel, "ATTACK", colEnv);
     attackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "ATTACK", attackSlider);
@@ -97,6 +141,25 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     sustainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "SUSTAIN", sustainSlider);
     setupKnob (releaseSlider, releaseLabel, "RELEASE", colEnv);
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "RELEASE", releaseSlider);
+
+    setupKnob (env2AttackSlider, env2AttackLabel, "ATTACK", colEnv2);
+    env2AttackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "ENV2_ATTACK", env2AttackSlider);
+    setupKnob (env2DecaySlider, env2DecayLabel, "DECAY", colEnv2);
+    env2DecayAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "ENV2_DECAY", env2DecaySlider);
+    setupKnob (env2SustainSlider, env2SustainLabel, "SUSTAIN", colEnv2);
+    env2SustainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "ENV2_SUSTAIN", env2SustainSlider);
+    setupKnob (env2ReleaseSlider, env2ReleaseLabel, "RELEASE", colEnv2);
+    env2ReleaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "ENV2_RELEASE", env2ReleaseSlider);
+
+    env1Button.setClickingTogglesState (true);
+    env2Button.setClickingTogglesState (true);
+    env1Button.setRadioGroupId (2);
+    env2Button.setRadioGroupId (2);
+    env1Button.setToggleState (true, juce::dontSendNotification);
+    addAndMakeVisible (env1Button);
+    addAndMakeVisible (env2Button);
+    env1Button.onClick = [this] { setEnvPage (0); };
+    env2Button.onClick = [this] { setEnvPage (1); };
 
     voiceModeLabel.setText ("MODE", juce::dontSendNotification);
     voiceModeLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
@@ -131,8 +194,8 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
         audioProcessor.setModWheel01 ((float) modWheelSlider.getValue());
     };
 
-    const juce::StringArray srcNames { "None", "LFO 1", "Env 1", "Vel", "ModWheel", "Keytrack" };
-    const juce::StringArray dstNames { "None", "Cutoff", "Osc1 Pitch", "Osc2 Pitch", "Osc1 Vol", "Osc2 Vol", "Osc1 WT", "Osc2 WT", "Master" };
+    const auto srcNames = modSourceNames();
+    const auto dstNames = modDestNames();
 
     auto setupHeader = [this] (juce::Label& label, const juce::String& text)
     {
@@ -187,6 +250,27 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     addAndMakeVisible (envelopeGraph);
     addAndMakeVisible (lfoGraph);
 
+    modEnvGraph1.setAccentColour (colEnv);
+    modEnvGraph2.setAccentColour (colEnv2);
+    addAndMakeVisible (modEnvGraph1);
+    addAndMakeVisible (modEnvGraph2);
+    for (auto& g : modLfoGraphs)
+        addAndMakeVisible (g);
+
+    auto setupModLabel = [this] (juce::Label& label, const juce::String& text)
+    {
+        label.setText (text, juce::dontSendNotification);
+        label.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        label.setJustificationType (juce::Justification::centredLeft);
+        label.setColour (juce::Label::textColourId, colMute);
+        addAndMakeVisible (label);
+    };
+    setupModLabel (modMacrosHeader, "MACROS");
+    setupModLabel (modEnvLabel1, "ENV 1");
+    setupModLabel (modEnvLabel2, "ENV 2");
+    for (int i = 0; i < kNumLfos; ++i)
+        setupModLabel (modLfoLabels[i], "LFO " + juce::String (i + 1));
+
     addAndMakeVisible (oscilloscope);
     oscilloscope.setRepaintRate (30);
     oscilloscope.setBufferSize (256);
@@ -202,6 +286,7 @@ CortexiaAudioProcessorEditor::CortexiaAudioProcessorEditor (CortexiaAudioProcess
     keyboard.setKeyWidth (14.0f);
     addAndMakeVisible (keyboard);
 
+    setLfoPage (0);
     refreshDisplays();
     startTimerHz (20);
     setSize (1280, 720);
@@ -216,6 +301,8 @@ CortexiaAudioProcessorEditor::~CortexiaAudioProcessorEditor()
     waveSelector1.setLookAndFeel (nullptr);
     waveSelector2.setLookAndFeel (nullptr);
     voiceModeSelector.setLookAndFeel (nullptr);
+    lfoShapeSelector.setLookAndFeel (nullptr);
+    lfoDivSelector.setLookAndFeel (nullptr);
     for (auto& row : matrixRows)
     {
         row.src.setLookAndFeel (nullptr);
@@ -251,11 +338,27 @@ void CortexiaAudioProcessorEditor::refreshDisplays()
     waveDisplay2.setWaveType ((int) apvts.getRawParameterValue ("OSC2")->load());
     filterDisplay.setParams (apvts.getRawParameterValue ("CUTOFF")->load(),
                              apvts.getRawParameterValue ("RESONANCE")->load());
-    envelopeGraph.setAdsr (apvts.getRawParameterValue ("ATTACK")->load(),
-                           apvts.getRawParameterValue ("DECAY")->load(),
-                           apvts.getRawParameterValue ("SUSTAIN")->load(),
-                           apvts.getRawParameterValue ("RELEASE")->load());
-    lfoGraph.setDepth (apvts.getRawParameterValue ("LFO_DEPTH")->load());
+    const juce::String envPrefix = envPage == 0 ? "" : "ENV2_";
+    envelopeGraph.setAdsr (apvts.getRawParameterValue (envPrefix + "ATTACK")->load(),
+                           apvts.getRawParameterValue (envPrefix + "DECAY")->load(),
+                           apvts.getRawParameterValue (envPrefix + "SUSTAIN")->load(),
+                           apvts.getRawParameterValue (envPrefix + "RELEASE")->load());
+    lfoGraph.setDepth (apvts.getRawParameterValue (lfoParamId (lfoPage, "DEPTH"))->load());
+    lfoGraph.setShape ((int) apvts.getRawParameterValue (lfoParamId (lfoPage, "SHAPE"))->load());
+
+    modEnvGraph1.setAdsr (apvts.getRawParameterValue ("ATTACK")->load(),
+                          apvts.getRawParameterValue ("DECAY")->load(),
+                          apvts.getRawParameterValue ("SUSTAIN")->load(),
+                          apvts.getRawParameterValue ("RELEASE")->load());
+    modEnvGraph2.setAdsr (apvts.getRawParameterValue ("ENV2_ATTACK")->load(),
+                          apvts.getRawParameterValue ("ENV2_DECAY")->load(),
+                          apvts.getRawParameterValue ("ENV2_SUSTAIN")->load(),
+                          apvts.getRawParameterValue ("ENV2_RELEASE")->load());
+    for (int i = 0; i < kNumLfos; ++i)
+    {
+        modLfoGraphs[i].setDepth (apvts.getRawParameterValue (lfoParamId (i, "DEPTH"))->load());
+        modLfoGraphs[i].setShape ((int) apvts.getRawParameterValue (lfoParamId (i, "SHAPE"))->load());
+    }
 }
 
 void CortexiaAudioProcessorEditor::timerCallback()
@@ -271,6 +374,50 @@ void CortexiaAudioProcessorEditor::setEditorPage (int page)
     applyEditorPageVisibility();
     resized();
     repaint();
+}
+
+void CortexiaAudioProcessorEditor::setEnvPage (int page)
+{
+    envPage = page;
+    envelopeGraph.setAccentColour (envPage == 0 ? colEnv : colEnv2);
+    applyEditorPageVisibility();
+    refreshDisplays();
+    repaint();
+}
+
+void CortexiaAudioProcessorEditor::setLfoPage (int page)
+{
+    lfoPage = juce::jlimit (0, kNumLfos - 1, page);
+    auto& apvts = audioProcessor.apvts;
+    using Apvts = juce::AudioProcessorValueTreeState;
+
+    lfoRateAttachment.reset();
+    lfoDepthAttachment.reset();
+    lfoShapeAttachment.reset();
+    lfoDivAttachment.reset();
+    lfoRetrigAttachment.reset();
+    lfoSyncAttachment.reset();
+
+    lfoRateAttachment = std::make_unique<Apvts::SliderAttachment> (apvts, lfoParamId (lfoPage, "RATE"), lfoRateSlider);
+    lfoDepthAttachment = std::make_unique<Apvts::SliderAttachment> (apvts, lfoParamId (lfoPage, "DEPTH"), lfoDepthSlider);
+    lfoShapeAttachment = std::make_unique<Apvts::ComboBoxAttachment> (apvts, lfoParamId (lfoPage, "SHAPE"), lfoShapeSelector);
+    lfoDivAttachment = std::make_unique<Apvts::ComboBoxAttachment> (apvts, lfoParamId (lfoPage, "DIV"), lfoDivSelector);
+    lfoRetrigAttachment = std::make_unique<Apvts::ButtonAttachment> (apvts, lfoParamId (lfoPage, "RETRIG"), lfoRetrigButton);
+    lfoSyncAttachment = std::make_unique<Apvts::ButtonAttachment> (apvts, lfoParamId (lfoPage, "SYNC"), lfoSyncButton);
+
+    updateLfoRateVisibility();
+    refreshDisplays();
+    repaint();
+}
+
+void CortexiaAudioProcessorEditor::updateLfoRateVisibility()
+{
+    const bool osc = editorPage == 0;
+    const bool sync = lfoSyncButton.getToggleState();
+    lfoRateSlider.setVisible (osc && ! sync);
+    lfoRateLabel.setVisible (osc && ! sync);
+    lfoDivSelector.setVisible (osc && sync);
+    lfoDivLabel.setVisible (osc && sync);
 }
 
 void CortexiaAudioProcessorEditor::applyEditorPageVisibility()
@@ -296,14 +443,33 @@ void CortexiaAudioProcessorEditor::applyEditorPageVisibility()
     visOsc (wtPosSlider2); visOsc (wtPosLabel2);
     visOsc (cutoffSlider); visOsc (cutoffLabel);
     visOsc (resonanceSlider); visOsc (resonanceLabel);
-    visOsc (lfoRateSlider); visOsc (lfoRateLabel);
     visOsc (lfoDepthSlider); visOsc (lfoDepthLabel);
-    visOsc (attackSlider); visOsc (attackLabel);
-    visOsc (decaySlider); visOsc (decayLabel);
-    visOsc (sustainSlider); visOsc (sustainLabel);
-    visOsc (releaseSlider); visOsc (releaseLabel);
+    visOsc (lfoShapeSelector); visOsc (lfoRetrigButton); visOsc (lfoSyncButton);
+    for (auto& b : lfoButtons)
+        visOsc (b);
+    updateLfoRateVisibility();
+    visOsc (env1Button); visOsc (env2Button);
+
+    const bool env1 = osc && envPage == 0;
+    const bool env2 = osc && envPage == 1;
+    for (auto* c : std::initializer_list<juce::Component*> { &attackSlider, &attackLabel, &decaySlider, &decayLabel,
+                                                              &sustainSlider, &sustainLabel, &releaseSlider, &releaseLabel })
+        c->setVisible (env1);
+    for (auto* c : std::initializer_list<juce::Component*> { &env2AttackSlider, &env2AttackLabel, &env2DecaySlider, &env2DecayLabel,
+                                                              &env2SustainSlider, &env2SustainLabel, &env2ReleaseSlider, &env2ReleaseLabel })
+        c->setVisible (env2);
     visOsc (waveDisplay1); visOsc (waveDisplay2);
     visOsc (filterDisplay); visOsc (envelopeGraph); visOsc (lfoGraph);
+
+    modEnvGraph1.setVisible (mtx);
+    modEnvGraph2.setVisible (mtx);
+    modMacrosHeader.setVisible (mtx);
+    modEnvLabel1.setVisible (mtx);
+    modEnvLabel2.setVisible (mtx);
+    for (auto& g : modLfoGraphs)
+        g.setVisible (mtx);
+    for (auto& l : modLfoLabels)
+        l.setVisible (mtx);
 
     matrixSrcHeader.setVisible (mtx);
     matrixDstHeader.setVisible (mtx);
@@ -357,6 +523,13 @@ void CortexiaAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (11.0f));
     g.drawText ("SPECTRAL SYNTHESIZER", 0, 30, getWidth(), 16, juce::Justification::centred);
 
+    if (editorPage == 0)
+    {
+        g.setColour (colMute);
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.drawText ("MACROS", 608, 44, 48, 14, juce::Justification::centredRight);
+    }
+
     g.setColour (juce::Colour (0xff1c2430));
     g.drawRoundedRectangle (960.0f, 10.0f, 168.0f, 36.0f, 5.0f, 1.0f);
 
@@ -379,20 +552,27 @@ void CortexiaAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText ("OSC A", (int) oscA.getX() + 14, (int) oscA.getY() + 10, 70, 18, juce::Justification::left);
         g.drawText ("OSC B", (int) oscB.getX() + 14, (int) oscB.getY() + 10, 70, 18, juce::Justification::left);
         g.drawText ("FILTER", (int) filt.getX() + 14, (int) filt.getY() + 10, 90, 18, juce::Justification::left);
-        g.drawText ("ENVELOPE", (int) env.getX() + 14, (int) env.getY() + 10, 110, 18, juce::Justification::left);
-        g.drawText ("LFO", (int) lfo.getX() + 14, (int) lfo.getY() + 10, 70, 18, juce::Justification::left);
+        g.drawText (envPage == 0 ? "ENV 1" : "ENV 2", (int) env.getX() + 14, (int) env.getY() + 10, 60, 18, juce::Justification::left);
+        g.drawText ("LFO " + juce::String (lfoPage + 1), (int) lfo.getX() + 14, (int) lfo.getY() + 10, 60, 18, juce::Justification::left);
 
         drawBadge (g, { oscA.getX() + 78.0f, oscA.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOsc);
         drawBadge (g, { oscB.getX() + 78.0f, oscB.getY() + 11.0f, 78.0f, 16.0f }, "WAVETABLE", colOscB);
         drawBadge (g, { filt.getX() + 88.0f, filt.getY() + 11.0f, 42.0f, 16.0f }, "LP", colFilt);
+        drawBadge (g, { env.getX() + 66.0f, env.getY() + 11.0f, 42.0f, 16.0f },
+                   envPage == 0 ? "AMP" : "MOD", envPage == 0 ? colEnv : colEnv2);
     }
     else
     {
-        auto mtx = juce::Rectangle<float> (12.0f, 58.0f, 1256.0f, 558.0f);
+        auto modStrip = juce::Rectangle<float> (12.0f, (float) kModStripTop, 1256.0f, (float) kModStripH);
+        auto mtx = juce::Rectangle<float> (12.0f, (float) kMatrixPanelTop, 1256.0f, (float) kMatrixPanelH);
+        drawPanel (g, modStrip);
         drawPanel (g, mtx);
         g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.setColour (juce::Colour (0xffe8edf4));
+        g.drawText ("MODULATORS", (int) modStrip.getX() + 14, (int) modStrip.getY() + 10, 120, 18, juce::Justification::left);
         g.drawText ("MATRIX", (int) mtx.getX() + 14, (int) mtx.getY() + 10, 110, 18, juce::Justification::left);
+        drawBadge (g, { modStrip.getX() + 300.0f, modStrip.getY() + 11.0f, 36.0f, 16.0f }, "AMP", colEnv);
+        drawBadge (g, { modStrip.getX() + 500.0f, modStrip.getY() + 11.0f, 36.0f, 16.0f }, "MOD", colEnv2);
         drawBadge (g, { mtx.getX() + 88.0f, mtx.getY() + 11.0f, 42.0f, 16.0f }, "8", colOsc);
     }
 }
@@ -400,9 +580,16 @@ void CortexiaAudioProcessorEditor::paint (juce::Graphics& g)
 void CortexiaAudioProcessorEditor::resized()
 {
     oscPageButton.setBounds (772, 12, 72, 26);
-    matrixPageButton.setBounds (848, 12, 88, 26);
+    matrixPageButton.setBounds (848, 12, 56, 26);
 
     oscilloscope.setBounds (961, 11, 166, 34);
+    for (int i = 0; i < 4; ++i)
+    {
+        if (editorPage == 0)
+            layoutKnob (macroSliders[i], macroLabels[i], { 648 + i * 72, 44, 56, 72 });
+        else
+            layoutKnob (macroSliders[i], macroLabels[i], { 24 + i * 60, 86, 52, 68 });
+    }
     layoutKnob (bendRangeSlider, bendRangeLabel, { 1136, 4, 64, 72 });
     layoutKnob (masterVolSlider, masterVolLabel, { 1208, 4, 64, 72 });
 
@@ -454,29 +641,54 @@ void CortexiaAudioProcessorEditor::resized()
             layoutKnob (decaySlider,   decayLabel,   d);
             layoutKnob (sustainSlider, sustainLabel, s);
             layoutKnob (releaseSlider, releaseLabel, r);
+            layoutKnob (env2AttackSlider,  env2AttackLabel,  a);
+            layoutKnob (env2DecaySlider,   env2DecayLabel,   d);
+            layoutKnob (env2SustainSlider, env2SustainLabel, s);
+            layoutKnob (env2ReleaseSlider, env2ReleaseLabel, r);
         }
+        env1Button.setBounds (130, 414, 60, 22);
+        env2Button.setBounds (194, 414, 60, 22);
 
-        lfoGraph.setBounds (662, 436, 430, 164);
+        for (int i = 0; i < kNumLfos; ++i)
+            lfoButtons[i].setBounds (724 + i * 32, 414, 28, 22);
+        lfoShapeSelector.setBounds (830, 413, 110, 24);
+        lfoRetrigButton.setBounds (950, 414, 64, 22);
+        lfoSyncButton.setBounds (1020, 414, 56, 22);
+
+        lfoGraph.setBounds (662, 442, 430, 160);
         layoutKnob (lfoRateSlider,  lfoRateLabel,  { 1108, 448, 70, 150 });
+        lfoDivLabel.setBounds (1108, 448, 70, 14);
+        lfoDivSelector.setBounds (1108, 500, 70, 24);
         layoutKnob (lfoDepthSlider, lfoDepthLabel, { 1188, 448, 70, 150 });
     }
     else
     {
-        matrixSrcHeader.setBounds (40, 88, 180, 14);
-        matrixDstHeader.setBounds (230, 88, 200, 14);
-        matrixAmtHeader.setBounds (440, 88, 100, 14);
-        matrixBipHeader.setBounds (550, 88, 50, 14);
-        matrixSrcHeader2.setBounds (660, 88, 180, 14);
-        matrixDstHeader2.setBounds (850, 88, 200, 14);
-        matrixAmtHeader2.setBounds (1060, 88, 100, 14);
-        matrixBipHeader2.setBounds (1170, 88, 50, 14);
+        modMacrosHeader.setBounds (24, kModStripTop + 12, 56, 14);
+        modEnvLabel1.setBounds (300, kModStripTop + 12, 48, 14);
+        modEnvLabel2.setBounds (500, kModStripTop + 12, 48, 14);
+        modEnvGraph1.setBounds (300, 78, 190, 96);
+        modEnvGraph2.setBounds (500, 78, 190, 96);
+        for (int i = 0; i < kNumLfos; ++i)
+        {
+            modLfoLabels[i].setBounds (720 + i * 175, kModStripTop + 12, 48, 14);
+            modLfoGraphs[i].setBounds (720 + i * 175, 78, 165, 96);
+        }
+
+        matrixSrcHeader.setBounds (40, kMatrixHeaderY, 180, 14);
+        matrixDstHeader.setBounds (230, kMatrixHeaderY, 200, 14);
+        matrixAmtHeader.setBounds (440, kMatrixHeaderY, 100, 14);
+        matrixBipHeader.setBounds (550, kMatrixHeaderY, 50, 14);
+        matrixSrcHeader2.setBounds (660, kMatrixHeaderY, 180, 14);
+        matrixDstHeader2.setBounds (850, kMatrixHeaderY, 200, 14);
+        matrixAmtHeader2.setBounds (1060, kMatrixHeaderY, 100, 14);
+        matrixBipHeader2.setBounds (1170, kMatrixHeaderY, 50, 14);
 
         for (int i = 0; i < 8; ++i)
         {
             const int col = i / 4;
             const int row = i % 4;
             const int x = 40 + col * 620;
-            const int y = 112 + row * 120;
+            const int y = kMatrixRowBaseY + row * kMatrixRowStep;
             auto& r = matrixRows[i];
             r.src.setBounds (x, y + 36, 180, 28);
             r.dst.setBounds (x + 190, y + 36, 200, 28);

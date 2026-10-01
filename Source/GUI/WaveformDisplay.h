@@ -32,18 +32,22 @@ class EnvelopeGraph : public juce::Component
 {
 public:
     void setAdsr (float attack, float decay, float sustain, float release);
+    void setAccentColour (juce::Colour c);
     void paint (juce::Graphics&) override;
 
 private:
     float attack = 0.1f, decay = 0.1f, sustain = 0.8f, release = 0.4f;
+    juce::Colour accent { 0xff4ade80 };
 };
 
 class LfoGraph : public juce::Component
 {
 public:
     void setDepth (float depth);
+    void setShape (int shapeIndex);
     void paint (juce::Graphics&) override;
 
 private:
     float depth = 0.0f;
+    int shape = 0;
 };

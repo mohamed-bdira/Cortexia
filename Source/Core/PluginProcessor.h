@@ -33,6 +33,7 @@ public:
     std::atomic<juce::AudioVisualiserComponent*> visualizer { nullptr };
     std::atomic<float> lastModWheel { 0.0f };
     std::atomic<float> lastExpression { 0.0f };
+    std::atomic<float> lastChannelPressure { 0.0f };
 
     void setModWheel01 (float value);
 

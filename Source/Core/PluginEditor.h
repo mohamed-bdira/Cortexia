@@ -24,17 +24,28 @@ private:
     void drawBadge (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& text, juce::Colour colour) const;
     void setEditorPage (int page);
     void applyEditorPageVisibility();
+    void setEnvPage (int page);
+    void setLfoPage (int page);
+    void updateLfoRateVisibility();
 
     CortexiaAudioProcessor& audioProcessor;
     ModernLookAndFeel customLookAndFeel;
     int editorPage = 0;
+    int envPage = 0;
+    int lfoPage = 0;
 
     juce::TextButton oscPageButton { "OSC" };
-    juce::TextButton matrixPageButton { "MATRIX" };
+    juce::TextButton matrixPageButton { "MOD" };
+    juce::TextButton env1Button { "ENV 1" };
+    juce::TextButton env2Button { "ENV 2" };
 
     juce::Slider masterVolSlider;
     juce::Label masterVolLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolAttachment;
+
+    juce::Slider macroSliders[4];
+    juce::Label macroLabels[4];
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> macroAttachments[4];
     juce::Slider bendRangeSlider;
     juce::Label bendRangeLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bendRangeAttachment;
@@ -62,13 +73,24 @@ private:
     juce::Slider cutoffSlider;    juce::Label cutoffLabel;    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     juce::Slider resonanceSlider; juce::Label resonanceLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
 
+    juce::TextButton lfoButtons[kNumLfos];
     juce::Slider lfoRateSlider;       juce::Label lfoRateLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoRateAttachment;
     juce::Slider lfoDepthSlider;      juce::Label lfoDepthLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
+    juce::ComboBox lfoShapeSelector;  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
+    juce::ComboBox lfoDivSelector;    juce::Label lfoDivLabel;    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoDivAttachment;
+    juce::TextButton lfoRetrigButton { "RETRIG" };
+    juce::TextButton lfoSyncButton { "SYNC" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lfoRetrigAttachment, lfoSyncAttachment;
 
     juce::Slider attackSlider;  juce::Label attackLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
     juce::Slider decaySlider;   juce::Label decayLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
     juce::Slider sustainSlider; juce::Label sustainLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;
     juce::Slider releaseSlider; juce::Label releaseLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
+
+    juce::Slider env2AttackSlider;  juce::Label env2AttackLabel;  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> env2AttackAttachment;
+    juce::Slider env2DecaySlider;   juce::Label env2DecayLabel;   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> env2DecayAttachment;
+    juce::Slider env2SustainSlider; juce::Label env2SustainLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> env2SustainAttachment;
+    juce::Slider env2ReleaseSlider; juce::Label env2ReleaseLabel; std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> env2ReleaseAttachment;
 
     juce::ComboBox voiceModeSelector;
     juce::Label voiceModeLabel;
@@ -101,6 +123,11 @@ private:
     FilterResponseDisplay filterDisplay;
     EnvelopeGraph envelopeGraph;
     LfoGraph lfoGraph;
+    EnvelopeGraph modEnvGraph1, modEnvGraph2;
+    LfoGraph modLfoGraphs[kNumLfos];
+    juce::Label modEnvLabel1, modEnvLabel2;
+    juce::Label modLfoLabels[kNumLfos];
+    juce::Label modMacrosHeader;
     juce::AudioVisualiserComponent oscilloscope { 1 };
     juce::MidiKeyboardComponent keyboard;
 

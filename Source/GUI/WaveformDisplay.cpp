@@ -151,6 +151,12 @@ void EnvelopeGraph::setAdsr (float a, float d, float s, float r)
     repaint();
 }
 
+void EnvelopeGraph::setAccentColour (juce::Colour c)
+{
+    accent = c;
+    repaint();
+}
+
 void EnvelopeGraph::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
@@ -179,15 +185,23 @@ void EnvelopeGraph::paint (juce::Graphics& g)
     fill.lineTo (plot.getRight(), plot.getBottom());
     fill.lineTo (plot.getX(), plot.getBottom());
     fill.closeSubPath();
-    g.setColour (juce::Colour (0xff4ade80).withAlpha (0.14f));
+    g.setColour (accent.withAlpha (0.14f));
     g.fillPath (fill);
-    g.setColour (juce::Colour (0xff4ade80));
+    g.setColour (accent);
     g.strokePath (p, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 void LfoGraph::setDepth (float d)
 {
     depth = juce::jlimit (0.0f, 1.0f, d);
+    repaint();
+}
+
+void LfoGraph::setShape (int shapeIndex)
+{
+    if (shape == shapeIndex)
+        return;
+    shape = shapeIndex;
     repaint();
 }
 
@@ -201,12 +215,28 @@ void LfoGraph::paint (juce::Graphics& g)
 
     auto plot = bounds.reduced (12.0f, 14.0f);
     const float amp = 0.15f + depth * 0.75f;
+    // Two cycles; S&H uses a fixed step pattern so the preview doesn't flicker.
+    static constexpr float holdSteps[] = { 0.6f, -0.3f, 0.9f, -0.8f, 0.1f, -0.5f, 0.75f, -0.1f };
+    auto shapeAt = [this] (float t)
+    {
+        const float cycles = t * 2.0f;
+        const float p = cycles - std::floor (cycles);
+        switch (shape)
+        {
+            case 1:  return p < 0.5f ? (4.0f * p - 1.0f) : (3.0f - 4.0f * p);
+            case 2:  return 2.0f * p - 1.0f;
+            case 3:  return p < 0.5f ? 1.0f : -1.0f;
+            case 4:  return holdSteps[juce::jlimit (0, 7, (int) (t * 8.0f))];
+            default: return std::sin (p * juce::MathConstants<float>::twoPi);
+        }
+    };
+
     juce::Path p;
     const int steps = juce::jmax (2, (int) plot.getWidth());
     for (int i = 0; i <= steps; ++i)
     {
         const float t = (float) i / (float) steps;
-        const float y = plot.getCentreY() - std::sin (t * juce::MathConstants<float>::twoPi) * plot.getHeight() * 0.42f * amp;
+        const float y = plot.getCentreY() - shapeAt (t) * plot.getHeight() * 0.42f * amp;
         const float x = plot.getX() + t * plot.getWidth();
         if (i == 0)
             p.startNewSubPath (x, y);

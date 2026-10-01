@@ -21,13 +21,18 @@ public:
     void stopNote (float, bool allowTailOff) override;
     void pitchWheelMoved (int) override;
     void controllerMoved (int, int) override;
+    void channelPressureChanged (int newChannelPressureValue) override;
+    void aftertouchChanged (int newAftertouchValue) override;
     void prepareToPlay (double sampleRate, int samplesPerBlock);
 
     void updateParameters (WaveType wave1, float gain1, float tune1, float detune1, int uni1, float uDet1, float uBlnd1, float wtPos1,
                            WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
-                           const juce::ADSR::Parameters& params, float cutoff, float resonance,
-                           float lfoRate, float lfoDepth, float mVol,
+                           const juce::ADSR::Parameters& params, const juce::ADSR::Parameters& env2Params,
+                           float cutoff, float resonance,
+                           const LfoSettings (&lfoSettings)[kNumLfos], float mVol,
                            float bendRange, int pitchWheelValue, float modWheel,
+                           float expression, float channelPressure,
+                           const float (&macros)[4],
                            const ModSlotPack& matrix);
 
     void setVoicing (float portaSeconds, bool alwaysGlide, double lastGlideHz);
@@ -36,11 +41,15 @@ public:
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override;
 
 private:
-    float sourceValue (ModSource source, float lfoSine, float env, bool bipolar) const;
+    float sourceValue (ModSource source, const float (&lfoValues)[kNumLfos], float env1, float env2Value, bool bipolar) const;
+    void retriggerLfos();
 
     juce::ADSR adsr;
+    juce::ADSR env2;
     StateVariableFilter filterL, filterR;
-    LFO filterLFO;
+    LFO lfos[kNumLfos];
+    float lfoDepths[kNumLfos] {};
+    bool lfoRetrig[kNumLfos] {};
     Oscillator osc1, osc2;
     ModSlotPack matrix;
 
@@ -54,7 +63,6 @@ private:
 
     float baseCutoff = 20000.0f;
     float filterResonance = 0.707f;
-    float modDepth = 0.0f;
     float bendRangeSemitones = 2.0f;
     int pitchWheel = 8192;
 
@@ -65,4 +73,7 @@ private:
     bool alwaysGlide = false;
     float modWheel01 = 0.0f;
     float expression01 = 0.0f;
+    float channelPressure01 = 0.0f;
+    float polyAftertouch01 = 0.0f;
+    float macro01[4] {};
 };

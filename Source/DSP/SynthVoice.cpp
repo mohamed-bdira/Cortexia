@@ -18,9 +18,19 @@ void SynthVoice::startNote (int midiNoteNumber, float velocity, juce::Synthesise
     osc1.resetPhases();
     osc2.resetPhases();
     noteVelocity = velocity;
+    polyAftertouch01 = 0.0f;
     filterL.reset();
     filterR.reset();
     adsr.noteOn();
+    env2.noteOn();
+    retriggerLfos();
+}
+
+void SynthVoice::retriggerLfos()
+{
+    for (int i = 0; i < kNumLfos; ++i)
+        if (lfoRetrig[i])
+            lfos[i].reset();
 }
 
 void SynthVoice::setVoicing (float portaSeconds, bool always, double lastHz)
@@ -45,12 +55,17 @@ void SynthVoice::retriggerPitch (int midiNote, bool retriggerEnv)
         filterL.reset();
         filterR.reset();
         adsr.noteOn();
+        env2.noteOn();
+        retriggerLfos();
     }
 }
 
 void SynthVoice::stopNote (float, bool allowTailOff)
 {
     adsr.noteOff();
+    env2.noteOff();
+    if (! allowTailOff)
+        env2.reset();
     if (! allowTailOff || ! adsr.isActive())
         clearCurrentNote();
 }
@@ -69,9 +84,20 @@ void SynthVoice::controllerMoved (int controllerNumber, int controllerValue)
         expression01 = n;
 }
 
+void SynthVoice::channelPressureChanged (int newChannelPressureValue)
+{
+    channelPressure01 = juce::jlimit (0.0f, 1.0f, (float) newChannelPressureValue / 127.0f);
+}
+
+void SynthVoice::aftertouchChanged (int newAftertouchValue)
+{
+    polyAftertouch01 = juce::jlimit (0.0f, 1.0f, (float) newAftertouchValue / 127.0f);
+}
+
 void SynthVoice::prepareToPlay (double sampleRate, int)
 {
     adsr.setSampleRate (sampleRate);
+    env2.setSampleRate (sampleRate);
     currentSampleRate = sampleRate;
     osc1.prepareToPlay (sampleRate);
     osc2.prepareToPlay (sampleRate);
@@ -81,41 +107,63 @@ void SynthVoice::prepareToPlay (double sampleRate, int)
 
 void SynthVoice::updateParameters (WaveType wave1, float gain1, float tune1, float detune1, int uni1, float uDet1, float uBlnd1, float wtPos1,
                                    WaveType wave2, float gain2, float tune2, float detune2, int uni2, float uDet2, float uBlnd2, float wtPos2,
-                                   const juce::ADSR::Parameters& params, float cutoff, float resonance,
-                                   float lfoRate, float lfoDepth, float mVol,
+                                   const juce::ADSR::Parameters& params, const juce::ADSR::Parameters& env2Params,
+                                   float cutoff, float resonance,
+                                   const LfoSettings (&lfoSettings)[kNumLfos], float mVol,
                                    float bendRange, int pitchWheelValue, float modWheel,
+                                   float expression, float channelPressure,
+                                   const float (&macros)[4],
                                    const ModSlotPack& slots)
 {
     osc1.setParameters (wave1, gain1, tune1, detune1, uni1, uDet1, uBlnd1, wtPos1);
     osc2.setParameters (wave2, gain2, tune2, detune2, uni2, uDet2, uBlnd2, wtPos2);
 
     adsr.setParameters (params);
+    env2.setParameters (env2Params);
     baseCutoff = cutoff;
     filterResonance = resonance;
-    filterLFO.setParameters (lfoRate, currentSampleRate);
-    modDepth = lfoDepth;
+    for (int i = 0; i < kNumLfos; ++i)
+    {
+        lfos[i].setParameters (lfoSettings[i].rateHz, currentSampleRate);
+        lfos[i].setShape (lfoSettings[i].shape);
+        lfoDepths[i] = lfoSettings[i].depth;
+        lfoRetrig[i] = lfoSettings[i].retrigger;
+    }
     masterVol = mVol;
     baseWtPos1 = wtPos1;
     baseWtPos2 = wtPos2;
     bendRangeSemitones = bendRange;
     pitchWheel = juce::jlimit (0, 16383, pitchWheelValue);
     modWheel01 = juce::jlimit (0.0f, 1.0f, modWheel);
+    expression01 = juce::jlimit (0.0f, 1.0f, expression);
+    channelPressure01 = juce::jlimit (0.0f, 1.0f, channelPressure);
+    for (int i = 0; i < 4; ++i)
+        macro01[i] = juce::jlimit (0.0f, 1.0f, macros[i]);
     matrix = slots;
 }
 
-float SynthVoice::sourceValue (ModSource source, float lfoSine, float env, bool bipolar) const
+float SynthVoice::sourceValue (ModSource source, const float (&lfoValues)[kNumLfos], float env1, float env2Value, bool bipolar) const
 {
     float uni = 0.0f;
 
+    int lfoIndex = -1;
+    if (source == ModSource::Lfo1)      lfoIndex = 0;
+    else if (source == ModSource::Lfo2) lfoIndex = 1;
+    else if (source == ModSource::Lfo3) lfoIndex = 2;
+
+    if (lfoIndex >= 0)
+    {
+        const float v = lfoValues[lfoIndex] * lfoDepths[lfoIndex];
+        return bipolar ? v : (lfoValues[lfoIndex] + 1.0f) * 0.5f * lfoDepths[lfoIndex];
+    }
+
     switch (source)
     {
-        case ModSource::Lfo1:
-            uni = (lfoSine + 1.0f) * 0.5f * modDepth;
-            if (bipolar)
-                return lfoSine * modDepth;
-            return uni;
         case ModSource::Env1:
-            uni = env;
+            uni = env1;
+            break;
+        case ModSource::Env2:
+            uni = env2Value;
             break;
         case ModSource::Vel:
             uni = noteVelocity;
@@ -126,6 +174,16 @@ float SynthVoice::sourceValue (ModSource source, float lfoSine, float env, bool 
         case ModSource::Keytrack:
             uni = (float) juce::jlimit (0, 127, currentMidiNote) / 127.0f;
             break;
+        case ModSource::Aftertouch:
+            uni = juce::jmax (channelPressure01, polyAftertouch01);
+            break;
+        case ModSource::Expression:
+            uni = expression01;
+            break;
+        case ModSource::Macro1: uni = macro01[0]; break;
+        case ModSource::Macro2: uni = macro01[1]; break;
+        case ModSource::Macro3: uni = macro01[2]; break;
+        case ModSource::Macro4: uni = macro01[3]; break;
         default:
             return 0.0f;
     }
@@ -141,8 +199,11 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int st
     {
         if (currentSampleRate <= 0.0) break;
 
-        const float lfoSine = filterLFO.getNextSample();
+        float lfoValues[kNumLfos];
+        for (int i = 0; i < kNumLfos; ++i)
+            lfoValues[i] = lfos[i].getNextSample();
         const float adsrValue = adsr.getNextSample();
+        const float env2Value = env2.getNextSample();
 
         float cutoffContrib = 0.0f;
         float osc1Pitch = 0.0f;
@@ -161,7 +222,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int st
             if (std::abs (slot.amount) < 1.0e-5f)
                 continue;
 
-            const float contrib = sourceValue (slot.source, lfoSine, adsrValue, slot.bipolar) * slot.amount;
+            const float contrib = sourceValue (slot.source, lfoValues, adsrValue, env2Value, slot.bipolar) * slot.amount;
 
             switch (slot.dest)
             {
